@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Application</title>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        crossorigin="anonymous" />
+  <style>
+    /* General Styles */
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    #chat-container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #00529B;
+    }
+    label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      display: block;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 15px;
+      font-size: 16px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      resize: none;
+    }
+    select, input[type="checkbox"] {
+      margin-bottom: 15px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      color: #fff;
+      background: #00529B;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #003f7f;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .button-row {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    #response-box, #metadata-box, #access-status, #error-message {
+      margin-top: 15px;
+      padding: 15px;
+      border-radius: 5px;
+    }
+    #response-box {
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      white-space: pre-wrap;
+    }
+    #metadata-box {
+      background: #f1f1f1;
+      font-style: italic;
+    }
+    #access-status {
+      font-weight: bold;
+      color: #00529B;
+    }
+    #error-message {
+      color: red;
+      background: #ffe6e6;
+      border: 1px solid #ffcccc;
+    }
+    #pdf-link a {
+      font-weight: bold;
+      color: green;
+    }
+    #pdf-embed {
+      margin-top: 15px;
+    }
+    .spinner {
+      display: none;
+      margin: 0 auto;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #00529B;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    form {
+      margin: 20px 0;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 5px;
+    }
+    select, textarea, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      background-color: #00529B;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #003f7f;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    .logs-metadata {
+      margin-top: 30px;
+    }
+    .logs-metadata button {
+      width: auto;
+      margin-right: 10px;
+    }
+    .response {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <h1>Chat Application</h1>
+    <div class="section">
+      <form id="chat-form" method="POST" action="/chat">
+        <label for="model-select">Select Model:</label>
+        <select id="model-select" name="model">
+          {% for model in models %}
+          <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>
+            {{ model }}
+          </option>
+          {% endfor %}
+        </select>
+        <label for="message">Enter your query:</label>
+        <textarea id="message" name="message" rows="4" placeholder="Enter your query here..."></textarea>
+        <label for="university">Select Institution:</label>
+        <select id="university" name="university" aria-label="Select Institution">
+          <option value="gatech">Georgia Tech</option>
+          <option value="odu">Old Dominion</option>
+        </select>
+        <label for="userInput">Enter Paper Title, PubMed ID, or DOI:</label>
+        <textarea id="userInput" name="userInput" placeholder="Enter title, PMID, or DOI..."></textarea>
+        <label>
+          <input type="checkbox" name="ignore_cache" value="true">
+          Ignore Cache
+        </label>
+        <button type="submit">Submit Query</button>
+      </form>
+    </div>
+    <div class="logs-metadata">
+      <h2>Logs and Metadata</h2>
+      <button onclick="window.location.href='/download_log'">Download Chat Log</button>
+      <button onclick="window.location.href='/download_metadata'">Download Metadata</button>
+      <button onclick="window.location.href='/view_metadata'">View Metadata</button>
+    </div>
+    <div class="spinner" id="loading-spinner"></div>
+    <div id="access-status"></div>
+    <div id="metadata-box"></div>
+    <div id="response-box"></div>
+    <div id="pdf-link"></div>
+    <div id="pdf-embed"></div>
+    <div id="error-message"></div>
+  </div>
+
+  <script>
+    async function sendMessage() {
+      // Clear old errors and displays
+      document.getElementById("error-message").innerText = "";
+      document.getElementById("response-box").innerText = "";
+      document.getElementById("access-status").innerText = "";
+      document.getElementById("metadata-box").innerText = "";
+      document.getElementById("pdf-link").innerHTML = "";
+      document.getElementById("pdf-embed").innerHTML = "";
+
+      const ui = document.getElementById("userInput").value.trim();
+      const uni = document.getElementById("university").value;
+      const forceReprocess = document.getElementById("forceReprocess").checked;
+      const btn = document.getElementById("summary-btn");
+      const spinner = document.getElementById("loading-spinner");
+
+      if (!ui) {
+        document.getElementById("error-message").innerText = "Please enter a valid query.";
+        return;
+      }
+
+      btn.disabled = true;
+      spinner.style.display = "block";
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: ui, university: uni, force_reprocess: forceReprocess }),
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          document.getElementById("response-box").innerText = data.reply;
+          document.getElementById("access-status").innerText = data.fulltext_status;
+          if (data.pdf_url) {
+            document.getElementById("pdf-link").innerHTML = `<a href="${data.pdf_url}" target="_blank">Download PDF</a>`;
+          }
+        } else {
+          document.getElementById("error-message").innerText = data.error || "An error occurred.";
+        }
+      } catch (err) {
+        document.getElementById("error-message").innerText = "Failed to fetch data. Please try again.";
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = "none";
+      }
+    }
+  </script>
+</body>
+</html>

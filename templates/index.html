@@ -1,0 +1,230 @@
+<!-- filepath: /templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scientific Paper Assistant</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    #chat-container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #00529B;
+    }
+    label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      display: block;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 15px;
+      font-size: 16px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      resize: none;
+    }
+    select, input[type="checkbox"] {
+      margin-bottom: 15px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 100%;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      color: #fff;
+      background: #00529B;
+      transition: background 0.3s ease;
+      width: 100%;
+    }
+    button:hover {
+      background: #003f7f;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .logs-metadata {
+      margin-top: 30px;
+    }
+    .logs-metadata button {
+      width: auto;
+      margin-right: 10px;
+    }
+    .response {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+    }
+    .spinner {
+      display: none;
+      margin: 0 auto;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #00529B;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .note {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #666;
+      font-style: italic;
+    }
+    .loading-indicator {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+    }
+    .paper-info {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f0f8ff;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <h1>Scientific Paper Assistant</h1>
+    
+    <form id="chat-form" method="POST" action="/chat">
+      <label for="model-select">Select Model:</label>
+      <select id="model-select" name="model">
+        {% for model in models %}
+        <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>
+          {{ model }}
+        </option>
+        {% endfor %}
+      </select>
+      
+      <label for="message">Enter Paper Title, PubMed ID, or DOI:</label>
+      <textarea id="message" name="message" rows="4" placeholder="Enter title, PMID, or DOI..."></textarea>
+      
+      <label>
+        <input type="checkbox" name="ignore_cache" value="true">
+        Ignore Cache
+      </label>
+      <p class="note">Note: If the same query is entered, the response will be rendered from cache unless "Ignore Cache" is checked.</p>
+      
+      <button type="submit" id="submit-btn">Submit Query</button>
+    </form>
+    
+    <!-- Loading Indicator -->
+    <div class="loading-indicator" id="loading">
+      <p>Processing your request...</p>
+      <div class="spinner" id="loading-spinner"></div>
+    </div>
+    
+    <!-- Response Section -->
+    {% if response %}
+    <div class="response">
+      <h2>Response:</h2>
+      <div>{{ response }}</div>
+    </div>
+    {% endif %}
+    
+    <!-- Paper Information Section -->
+    {% if paper_info %}
+    <div class="paper-info">
+      <h3>Paper Information</h3>
+      
+      {% if paper_info.title %}
+      <p><strong>Title:</strong> {{ paper_info.title }}</p>
+      {% endif %}
+      
+      {% if paper_info.doi %}
+      <p><strong>DOI:</strong> {{ paper_info.doi }}</p>
+      {% endif %}
+      
+      {% if paper_info.pmid %}
+      <p><strong>PMID:</strong> {{ paper_info.pmid }}</p>
+      {% endif %}
+      
+      <p><strong>Access Status:</strong> 
+        {% if paper_info.has_full_text %}
+        <span style="color: green;">Full Text Retrieved</span>
+        {% elif paper_info.has_abstract %}
+        <span style="color: orange;">Abstract Only</span>
+        {% else %}
+        <span style="color: red;">{{ paper_info.access_status or "Failed to retrieve text" }}</span>
+        {% endif %}
+      </p>
+      
+      {% if paper_info.url %}
+      <p><strong>PDF:</strong> <a href="{{ paper_info.url }}" target="_blank">View PDF</a></p>
+      {% endif %}
+      
+      {% if paper_info.access_logs %}
+      <details>
+        <summary>Access Attempt Details</summary>
+        <ul>
+        {% for log in paper_info.access_logs %}
+          <li>
+            <strong>{{ log.source }}:</strong> 
+            {% if log.success %}
+            <span style="color: green;">SUCCESS</span>
+            {% else %}
+            <span style="color: red;">FAILED</span> - {{ log.message }}
+            {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      
+      <p><strong>Content Source:</strong> {{ paper_info.source }}</p>
+      <p><strong>Content Length:</strong> {{ paper_info.text_length }} characters</p>
+    </div>
+    {% endif %}
+    
+    <div class="logs-metadata">
+      <h2>Logs and Metadata</h2>
+      <button onclick="window.location.href='/download_log'">Download Chat Log</button>
+      <button onclick="window.location.href='/download_metadata'">Download Metadata</button>
+      <button onclick="window.location.href='/view_metadata'" target="_blank">View Metadata</button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('chat-form').addEventListener('submit', function() {
+      // Show loading indicator when form is submitted
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading-spinner').style.display = 'block';
+      document.getElementById('submit-btn').disabled = true;
+    });
+  </script>
+</body>
+</html>

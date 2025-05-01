@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Full Text Sources</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #00529B;
+    }
+    form {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    input, button {
+      margin: 10px 0;
+      padding: 8px;
+    }
+    .results {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
+    .success {
+      color: green;
+    }
+    .failed {
+      color: red;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    table, th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Test Full Text Access Sources</h1>
+    
+    <form method="POST">
+      <div>
+        <label for="doi">DOI:</label>
+        <input type="text" id="doi" name="doi" placeholder="e.g., 10.1073/pnas.2207089119">
+      </div>
+      <div>
+        <label for="pmid">PMID:</label>
+        <input type="text" id="pmid" name="pmid" placeholder="e.g., 36096869">
+      </div>
+      <div>
+        <label for="title">Paper Title:</label>
+        <input type="text" id="title" name="title" style="width: 100%" placeholder="e.g., Epigenetic Induction of Cancer-Testis Antigens and Endogenous Retroviruses">
+      </div>
+      <div class="form-group">
+        <label for="pmcid">PMCID:</label>
+        <input type="text" class="form-control" id="pmcid" name="pmcid" placeholder="e.g., PMC11275559">
+      </div>
+      <button type="submit">Test Access</button>
+    </form>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    {% if results %}
+    <div class="results">
+      <h2>Test Results</h2>
+      
+      <p><strong>DOI:</strong> {{ results.doi or "Not provided" }}</p>
+      <p><strong>PMID:</strong> {{ results.pmid or "Not provided" }}</p>
+      <p><strong>Title:</strong> {{ results.title or "Not provided" }}</p>
+      <p><strong>Timestamp:</strong> {{ results.timestamp }}</p>
+      
+      <h3>Individual Sources</h3>
+      <table>
+        <tr>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Details</th>
+        </tr>
+        {% for source, data in results.sources.items() %}
+        <tr>
+          <td>{{ source }}</td>
+          <td class="{{ data.status }}">
+            {% if data.status == "error" %}
+              <span style="color: orange;">ERROR</span>
+            {% elif data.status == "failed" %}
+              <span style="color: red;">FAILED</span>
+            {% else %}
+              <span style="color: green;">SUCCESS</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if data.length is defined %}
+              {{ data.length }} characters
+              {% if data.is_full_text is defined %}
+                ({% if data.is_full_text %}Full Text{% else %}Abstract{% endif %})
+              {% endif %}
+              {% if data.time is defined %}(took {{ data.time }}){% endif %}
+            {% elif data.url is defined %}
+              <a href="{{ data.url }}" target="_blank">{{ data.url }}</a>
+            {% elif data.message is defined %}
+              {{ data.message }}
+            {% else %}
+              No details
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      
+      <h3>Consolidated Resolver</h3>
+      <div>
+        Status: 
+        <span class="{{ results.consolidated.status }}">
+          {{ results.consolidated.status.upper() }}
+        </span>
+      </div>
+      
+      {% if results.consolidated.text_length %}
+      <div>Text length: {{ results.consolidated.text_length }} characters 
+        {% if results.consolidated.is_full_text %}
+          (FULL TEXT)
+        {% else %}
+          (ABSTRACT ONLY)
+        {% endif %}
+      </div>
+      {% endif %}
+      
+      {% if results.consolidated.message %}
+      <div>Error message: {{ results.consolidated.message }}</div>
+      {% endif %}
+      
+      {% if results.consolidated.metadata and results.consolidated.metadata.access_logs %}
+      <h4>Access Logs</h4>
+      <table>
+        <tr>
+          <th>Source</th>
+          <th>Success</th>
+          <th>Message</th>
+        </tr>
+        {% for log in results.consolidated.metadata.access_logs %}
+        <tr>
+          <td>{{ log.source }}</td>
+          <td class="{{ 'success' if log.success else 'failed' }}">
+            {{ "Yes" if log.success else "No" }}
+          </td>
+          <td>{{ log.message }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </div>
+    
+    <div class="pdf-extraction-section" style="margin-top: 20px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
+      <h3>PDF Processing Results</h3>
+      {% if results.sources.Unpaywall and results.sources.Unpaywall.status == 'success' %}
+        <p><strong>PDF URL Found:</strong> 
+          <a href="{{ results.sources.Unpaywall.url }}" target="_blank">{{ results.sources.Unpaywall.url }}</a>
+        </p>
+        
+        {% if results.sources['PDF Extraction'] %}
+          {% if results.sources['PDF Extraction'].status == 'success' %}
+            <p class="success">✅ PDF Text Extraction Successful: 
+               {{ results.sources['PDF Extraction'].length }} characters 
+               ({% if results.sources['PDF Extraction'].is_full_text %}Full Text{% else %}Abstract/Partial{% endif %})
+            </p>
+          {% else %}
+            <p class="failed">❌ PDF Extraction Failed: {{ results.sources['PDF Extraction'].message }}</p>
+            <p>Common reasons for PDF extraction failure:</p>
+            <ul>
+              <li>PDF is protected/encrypted</li>
+              <li>PDF contains images rather than text</li>
+              <li>Server is blocking automated downloads</li>
+              <li>PDF format is non-standard</li>
+            </ul>
+            <p><a href="{{ results.sources.Unpaywall.url }}" target="_blank">Download PDF manually</a> to verify content.</p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    </div>
+    
+    {% if results and results.overall_status %}
+    <div style="margin: 20px 0; padding: 10px; background-color: #f5f5f5; border-radius: 5px;">
+      <h3>Overall Access Status:</h3>
+      <p style="font-size: 18px; color: {{ results.overall_status.color }};">
+        <strong>{{ results.overall_status.access_level }}</strong>
+      </p>
+      
+      {% if results.overall_status.successful_sources %}
+      <p>Successfully accessed through: {{ results.overall_status.successful_sources|join(', ') }}</p>
+      {% endif %}
+      
+      <ul>
+        <li>Full Text: {% if results.overall_status.has_full_text %}Available{% else %}Not Available{% endif %}</li>
+        <li>Abstract: {% if results.overall_status.has_abstract %}Available{% else %}Not Available{% endif %}</li>
+        <li>PDF: {% if results.overall_status.has_pdf %}Available{% else %}Not Available{% endif %}</li>
+      </ul>
+      
+      {% if results.overall_status.access_level == "Not Available Through Open Access" %}
+      <p><em>This paper appears to be behind a paywall and is not available through any of the open access sources tested.</em></p>
+      {% endif %}
+    </div>
+    {% endif %}
+    
+    {% endif %}
+    
+    <div style="margin-top: 20px;">
+      <a href="/">Back to Home</a>
+    </div>
+  </div>
+</body>
+</html>

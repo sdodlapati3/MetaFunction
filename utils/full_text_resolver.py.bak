@@ -1,0 +1,819 @@
+# full_text_resolver.py
+import os
+import re
+import logging
+import requests
+from Bio import Entrez
+from bs4 import BeautifulSoup
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+import io
+
+# Make sure these imports are at the top
+try:
+    import pdfplumber
+except ImportError:
+    logging.warning("pdfplumber not installed, PDF extraction may be limited")
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    logging.warning("PyMuPDF not installed, PDF extraction may be limited")
+
+try:
+    from pdfminer.high_level import extract_text_to_fp
+except ImportError:
+    logging.warning("pdfminer not installed, PDF extraction may be limited")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Set Entrez email from environment variable or fallback
+Entrez.email = os.getenv("NCBI_EMAIL", "default_email@example.com")
+
+# --- Validation Functions ---
+def validate_pmid(pmid):
+    """
+    Validate the format of a PMID.
+    """
+    return re.match(r'^\d{7,9}$', pmid) is not None
+
+def validate_doi(doi):
+    """
+    Validate the format of a DOI.
+    """
+    return re.match(r'^10\.\d{4,9}/[-._;()/:A-Z0-9]+$', doi, re.I) is not None
+
+# --- Fetch Functions ---
+def fetch_pubmed_abstract(pmid):
+    """
+    Fetch the abstract from PubMed using the PMID.
+    """
+    if not validate_pmid(pmid):
+        logging.error(f"Invalid PMID format: {pmid}")
+        return None
+
+    try:
+        handle = Entrez.efetch(db="pubmed", id=pmid, rettype="abstract", retmode="text")
+        return handle.read()
+    except Exception as e:
+        logging.error(f"PubMed abstract fetch failed for PMID {pmid}: {e}")
+        return None
+
+def fetch_fulltext_europe_pmc(pmid):
+    """
+    Fetch the full text from Europe PMC using the PMID.
+    """
+    if not validate_pmid(pmid):
+        logging.error(f"Invalid PMID format: {pmid}")
+        return None
+
+    try:
+        url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmid}/fullTextXML"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.text
+        return None
+    except Exception as e:
+        logging.error(f"Europe PMC fulltext fetch failed for PMID {pmid}: {e}")
+        return None
+
+def fetch_summary_europe_pmc(pmid):
+    """
+    Fetch the summary (abstract) from Europe PMC using the PMID.
+    """
+    try:
+        url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=EXT_ID:{pmid}&resultType=core&format=json"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return data['resultList']['result'][0].get('abstractText') if data['hitCount'] > 0 else None
+    except Exception as e:
+        logging.error(f"Europe PMC summary fetch failed for PMID {pmid}: {e}")
+        return None
+
+def fetch_biorxiv_html(doi):
+    """Fetch paper from bioRxiv."""
+    if not doi.startswith("10.1101/"):
+        return None
+        
+    try:
+        # Convert DOI to bioRxiv URL
+        biorxiv_id = doi.split("/")[-1]
+        url = f"https://www.biorxiv.org/content/10.1101/{biorxiv_id}"
+        
+        response = requests.get(url)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            paper_sections = soup.select("div.section")
+            if paper_sections:
+                return "\n\n".join([section.get_text() for section in paper_sections])
+        return None
+    except Exception as e:
+        logging.error(f"bioRxiv fetch failed: {e}")
+        return None
+
+def check_unpaywall(doi):
+    """
+    Check Unpaywall for open-access PDF links.
+    """
+    import os
+    from Bio import Entrez
+    
+    if not validate_doi(doi):
+        logging.error(f"Invalid DOI format for Unpaywall: {doi}")
+        return None
+
+    try:
+        Entrez.email = os.getenv("NCBI_EMAIL", "default_email@example.com")
+        url = f"https://api.unpaywall.org/v2/{doi}?email={Entrez.email}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            best_oa_location = data.get('best_oa_location', {})
+            if best_oa_location:
+                return best_oa_location.get('url_for_pdf') or best_oa_location.get('url')
+        return None
+    except Exception as e:
+        logging.error(f"Unpaywall check failed for DOI {doi}: {e}")
+        return None
+
+def verify_pdf_url(url):
+    """
+    Verify if a URL points to a valid PDF.
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.head(url, headers=headers, timeout=5)
+        content_type = response.headers.get('Content-Type', '')
+        return 'pdf' in content_type.lower() and response.status_code == 200
+    except Exception as e:
+        logging.error(f"PDF URL verification failed: {e}")
+        return False
+
+def construct_proxy_url(doi, university):
+    """
+    Construct a proxy URL for accessing full text via institutional access.
+    """
+    proxies = {
+        "gatech": "https://gt.library.proxy.gatech.edu/login?url=",
+        "odu": "https://login.proxy.lib.odu.edu/login?url="
+    }
+    base_url = f"https://doi.org/{doi}"
+    return proxies.get(university, "") + base_url
+
+def fetch_text_from_journal_site(doi):
+    """Attempt to fetch text directly from the journal website."""
+    publisher_patterns = {
+        "10.1158": {  # AACR journals
+            "url": f"https://aacrjournals.org/cancerres/article-lookup/doi/{doi}",
+            "selector": "div.article-full-text"
+        },
+        "10.1371": {  # PLOS journals
+            "url": f"https://journals.plos.org/plosone/article?id={doi}",
+            "selector": "div.article-full-text"
+        },
+        # Add more publishers as needed
+    }
+    
+    for prefix, config in publisher_patterns.items():
+        if doi.startswith(prefix):
+            try:
+                response = requests.get(config["url"])
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    content = soup.select_one(config["selector"])
+                    if content:
+                        return content.get_text()
+            except Exception as e:
+                logging.error(f"Error fetching from journal site: {e}")
+    
+    return None
+
+def fetch_semantic_scholar_text(doi):
+    """Fetch paper from Semantic Scholar API."""
+    try:
+        url = f"https://api.semanticscholar.org/v1/paper/{doi}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Try to get PDF URL from S2
+            if data.get("openAccessPdf"):
+                pdf_url = data["openAccessPdf"]["url"]
+                return extract_text_from_pdf_url(pdf_url)
+                
+            # Try to get abstract at minimum
+            if data.get("abstract"):
+                return data["abstract"]
+                
+        return None
+    except Exception as e:
+        logging.error(f"Semantic Scholar fetch failed: {e}")
+        return None
+
+# --- PMID/DOI Conversion Functions ---
+def pmid_to_doi(pmid):
+    """Convert PMID to DOI using NCBI API."""
+    if not validate_pmid(pmid):
+        logging.error(f"Invalid PMID format: {pmid}")
+        return None
+
+    try:
+        handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
+        records = Entrez.read(handle)
+        articles = records['PubmedArticle']
+        if not articles:
+            return None
+        
+        article = articles[0]
+        article_id_list = article['PubmedData']['ArticleIdList']
+        
+        for article_id in article_id_list:
+            if article_id.attributes.get('IdType') == 'doi':
+                return str(article_id)
+        
+        return None
+    except Exception as e:
+        logging.error(f"PMID to DOI conversion failed: {e}")
+        return None
+
+# --- Caching ---
+@lru_cache(maxsize=100)
+def cached_resolve_full_text(pmid=None, doi=None):
+    """Cached version of resolve_full_text."""
+    return resolve_full_text(pmid, doi)
+
+# --- Master Resolver ---
+def resolve_full_text(pmid=None, doi=None, title=None):
+    """
+    Comprehensive pipeline for retrieving full text from multiple sources.
+    
+    Args:
+        pmid: PubMed ID
+        doi: Digital Object Identifier
+        title: Paper title
+        
+    Returns:
+        tuple: (full_text, metadata)
+    """
+    results = []
+    metadata = {"pmid": pmid, "doi": doi, "title": title, "access_logs": []}
+    
+    def log_attempt(source, success, message=""):
+        """Log each access attempt with detailed status."""
+        metadata["access_logs"].append({
+            "source": source,
+            "success": success,
+            "timestamp": datetime.now().isoformat(),
+            "message": message
+        })
+        logging.info(f"Access attempt: {source} - {'SUCCESS' if success else 'FAILED'} - {message}")
+
+    # Convert PMID to DOI if needed
+    if pmid and not doi:
+        try:
+            handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
+            records = Entrez.read(handle)
+            handle.close()
+            
+            if records["PubmedArticle"]:
+                article = records["PubmedArticle"][0]
+                article_id_list = article.get("PubmedData", {}).get("ArticleIdList", [])
+                
+                for article_id in article_id_list:
+                    if article_id.attributes.get("IdType") == "doi":
+                        doi = str(article_id)
+                        metadata["doi"] = doi
+                        log_attempt("pmid_to_doi", True, f"Converted PMID {pmid} to DOI {doi}")
+                        break
+                else:
+                    log_attempt("pmid_to_doi", False, f"Failed to convert PMID {pmid} to DOI")
+        except Exception as e:
+            log_attempt("pmid_to_doi", False, f"Error: {str(e)}")
+
+    def fetch_from_source(source_func, source_name, *args, is_full_text=True):
+        """Helper to fetch from a source and track results."""
+        try:
+            result = source_func(*args)
+            if result:
+                # Check if this is actually full text
+                actual_is_full_text = is_full_text and is_full_text(result)
+                
+                # Store whether this source provides full text or just an abstract
+                results.append((result, source_name, actual_is_full_text))
+                log_attempt(source_name, True, f"Retrieved {len(result)} characters")
+                return True
+            else:
+                log_attempt(source_name, False, "No content returned")
+        except Exception as e:
+            log_attempt(source_name, False, f"Error: {str(e)}")
+        return False
+
+    # Try each source in priority order
+    if pmid:
+        # Europe PMC can provide full text
+        fetch_from_source(fetch_fulltext_europe_pmc, "Europe PMC", pmid, is_full_text=True)
+        # PubMed only provides abstracts
+        fetch_from_source(fetch_pubmed_abstract, "PubMed Abstract", pmid, is_full_text=False)
+        
+    if doi:
+        # For AACR journals (like your specific paper)
+        if doi.startswith("10.1158"):
+            fetch_from_source(fetch_aacr_fulltext, "AACR Journal", doi, is_full_text=True)
+            
+        # Continue with other sources...
+        fetch_from_source(fetch_biorxiv_html, "BioRxiv", doi, is_full_text=True)
+        fetch_from_source(fetch_from_journal_site, "Journal Site", doi, is_full_text=True)
+        fetch_from_source(fetch_semantic_scholar_text, "Semantic Scholar", doi, is_full_text=True)
+        fetch_from_source(extract_from_unpaywall_pdf, "Unpaywall", doi, is_full_text=True)
+        fetch_from_source(fetch_from_open_repositories, "Open Access Repositories", doi, is_full_text=True)
+        fetch_from_source(fetch_aacr_fulltext, "AACR", doi, is_full_text=True)
+        
+        # SciHub is disabled by default - enable only where legal
+        fetch_from_source(lambda: fetch_from_scihub(doi, enable_scihub=False), 
+                         "SciHub", is_full_text=True)
+    
+    # Process results - first prioritize full text results
+    full_text_results = [r for r in results if r[2]]
+    
+    if full_text_results:
+        # We have full text, use the longest one
+        best_result = max(full_text_results, key=lambda x: len(x[0]))
+        best_text = best_result[0]
+        source = best_result[1]
+        
+        metadata["source"] = source
+        metadata["text_length"] = len(best_text)
+        metadata["has_full_text"] = True
+        metadata["has_abstract"] = True
+        
+        # Extract abstract for metadata
+        metadata["abstract"] = best_text[:500] + "..."  # First 500 chars as abstract preview
+        
+        logging.info(f"Using full text from {source} ({len(best_text)} characters)")
+        return best_text, metadata
+    
+    elif results:
+        # No full text, but we have abstracts - use the best abstract
+        best_result = max(results, key=lambda x: len(x[0]))
+        best_text = best_result[0]
+        source = best_result[1]
+        
+        metadata["source"] = source
+        metadata["text_length"] = len(best_text)
+        metadata["has_full_text"] = False
+        metadata["has_abstract"] = True
+        metadata["abstract"] = best_text
+        
+        logging.info(f"No full text available, using abstract from {source} ({len(best_text)} characters)")
+        return best_text, metadata
+
+    # Try to get metadata even if we couldn't get full text
+    try:
+        if pmid:
+            handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
+            records = Entrez.read(handle)
+            if records['PubmedArticle']:
+                article = records['PubmedArticle'][0]['MedlineCitation']['Article']
+                metadata["title"] = article.get('ArticleTitle', '')
+                metadata["journal"] = article.get('Journal', {}).get('Title', '')
+                metadata["year"] = article.get('Journal', {}).get('JournalIssue', {}).get('PubDate', {}).get('Year', '')
+                abstract_text = article.get('Abstract', {}).get('AbstractText', [''])[0]
+                metadata["abstract"] = abstract_text if isinstance(abstract_text, str) else str(abstract_text)
+                metadata["has_abstract"] = bool(metadata["abstract"])
+                metadata["authors"] = [author.get('LastName', '') + ' ' + author.get('ForeName', '') 
+                                   for author in article.get('AuthorList', [])][:5]
+                log_attempt("PubMed Metadata", True, "Retrieved metadata")
+    except Exception as e:
+        log_attempt("PubMed Metadata", False, f"Error: {str(e)}")
+    
+    # Return failure status
+    metadata["has_full_text"] = False
+    metadata["error"] = "Failed to retrieve full text from any source"
+    return None, metadata
+
+# --- Optional DOI/PMID Extractor Helpers ---
+def extract_pmid_from_query(text):
+    """
+    Extract a PMID from a given text query.
+    """
+    pmid_match = re.search(r'\b\d{7,9}\b', text)
+    return pmid_match.group(0) if pmid_match else None
+
+def extract_doi_from_query(text):
+    """
+    Extract a DOI from a given text query.
+    """
+    doi_match = re.search(r'\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b', text, flags=re.I)
+    return doi_match.group(0) if doi_match else None
+
+def extract_text_from_pdf_bytes(pdf_bytes):
+    """Extract text from PDF bytes with multiple methods."""
+    text = ""
+    extraction_methods = []
+    
+    # Try pdfplumber first
+    if 'pdfplumber' in globals():
+        extraction_methods.append(extract_with_pdfplumber)
+    
+    # Try PyMuPDF if available
+    if 'fitz' in globals():
+        extraction_methods.append(extract_with_pymupdf)
+    
+    # Try pdfminer if available
+    if 'extract_text_to_fp' in globals():
+        extraction_methods.append(extract_with_pdfminer)
+    
+    for method in extraction_methods:
+        try:
+            extracted = method(pdf_bytes)
+            if extracted and len(extracted) > len(text):
+                text = extracted
+                break  # Use first successful extraction
+        except Exception as e:
+            logging.error(f"PDF extraction method failed: {e}")
+            continue
+    
+    # Clean up common PDF extraction issues
+    if text:
+        # Fix hyphenated words across lines
+        text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', text)
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+    return text
+
+def extract_with_pdfplumber(pdf_bytes):
+    with io.BytesIO(pdf_bytes) as pdf_file:
+        with pdfplumber.open(pdf_file) as pdf:
+            text = ""
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+    return text
+
+def extract_with_pymupdf(pdf_bytes):
+    text = ""
+    with io.BytesIO(pdf_bytes) as pdf_file:
+        doc = fitz.open(stream=pdf_file, filetype="pdf")
+        for page in doc:
+            text += page.get_text()
+    return text
+
+def extract_with_pdfminer(pdf_bytes):
+    output_string = io.StringIO()
+    with io.BytesIO(pdf_bytes) as pdf_file:
+        extract_text_to_fp(pdf_file, output_string)
+    return output_string.getvalue()
+
+def extract_text_from_pdf_url(url):
+    """Extract text from a PDF URL with advanced processing."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, stream=True, headers=headers, timeout=30)
+        if response.status_code == 200:
+            return extract_text_from_pdf_bytes(response.content)
+        return None
+    except Exception as e:
+        logging.error(f"Failed to extract text from PDF URL: {e}")
+        return None
+
+def is_full_text(text):
+    """Determine if text is likely full content or just abstract."""
+    if not text:
+        return False
+        
+    # Check length (typical abstracts are < 4000 chars)
+    if len(text) > 4000:
+        return True
+        
+    # Check for sections that appear in full papers but not abstracts
+    full_text_markers = [
+        'introduction', 
+        'methods', 
+        'results', 
+        'discussion',
+        'conclusion', 
+        'references',
+        'materials and methods',
+        'figure 1',
+        'table 1'
+    ]
+    
+    text_lower = text.lower()
+    section_matches = sum(1 for marker in full_text_markers if marker in text_lower)
+    
+    # If we match multiple section markers, likely full text
+    return section_matches >= 3
+
+def fetch_from_open_repositories(doi):
+    """Try multiple open access repositories."""
+    # Implementation - basic version
+    try:
+        # Check arXiv
+        response = requests.get(f"https://export.arxiv.org/api/query?search_query=doi:{doi}")
+        if response.status_code == 200:
+            # Process XML safely
+            try:
+                from lxml import etree
+                root = etree.fromstring(response.content)
+                entries = root.xpath("//ns:entry", namespaces={"ns": "http://www.w3.org/2005/Atom"})
+                if entries:
+                    for entry in entries:
+                        links = entry.xpath(".//ns:link[@title='pdf']", namespaces={"ns": "http://www.w3.org/2005/Atom"})
+                        if links and "href" in links[0].attrib:
+                            pdf_url = links[0].attrib["href"]
+                            return extract_text_from_pdf_url(pdf_url)
+            except ImportError:
+                # Fallback without lxml
+                if "<entry>" in response.text:
+                    # Very basic extraction - better to use proper XML parsing
+                    pdf_url = None
+                    if 'title="pdf" href="' in response.text:
+                        pdf_url = response.text.split('title="pdf" href="')[1].split('"')[0]
+                    if pdf_url:
+                        return extract_text_from_pdf_url(pdf_url)
+        return None
+    except Exception as e:
+        logging.error(f"Open repositories check failed: {e}")
+        return None
+
+def fetch_from_journal_site(doi):
+    """Attempt to retrieve from the journal website based on DOI patterns."""
+    publisher_patterns = {
+        # AACR journals
+        "10.1158": {
+            "url": f"https://aacrjournals.org/crc/article-lookup/doi/{doi}",
+            "selector": ["div.article-body", "section.article-section__full", "div.hlFld-Fulltext"]
+        },
+        # Add more publishers as needed
+    }
+    
+    # Find matching publisher pattern
+    publisher = None
+    for prefix, config in publisher_patterns.items():
+        if doi.startswith(prefix):
+            publisher = prefix
+            break
+    
+    if not publisher:
+        return None
+    
+    config = publisher_patterns[publisher]
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(config["url"], headers=headers, timeout=20)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Try multiple selectors if provided
+            selectors = config["selector"] if isinstance(config["selector"], list) else [config["selector"]]
+            
+            for selector in selectors:
+                elements = soup.select(selector)
+                if elements:
+                    return " ".join([el.get_text(separator=' ', strip=True) for el in elements])
+            
+            # If PDF link is present, try that
+            pdf_link = soup.select_one('a[href*=".pdf"], a.pdf-link')
+            if pdf_link and pdf_link.get('href'):
+                pdf_url = pdf_link['href']
+                if not pdf_url.startswith('http'):
+                    # Handle relative URLs
+                    pdf_url = f"{'/'.join(response.url.split('/')[:-1])}/{pdf_url}"
+                return extract_text_from_pdf_url(pdf_url)
+                
+        return None
+    except Exception as e:
+        logging.error(f"Journal site fetch failed for {doi}: {e}")
+        return None
+
+def fetch_semantic_scholar_text(doi):
+    """Fetch paper from Semantic Scholar API."""
+    try:
+        url = f"https://api.semanticscholar.org/v1/paper/{doi}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            # Try to get PDF URL from S2
+            if data.get("openAccessPdf"):
+                pdf_url = data["openAccessPdf"]["url"]
+                return extract_text_from_pdf_url(pdf_url)
+                
+            # Try to get abstract at minimum
+            if data.get("abstract"):
+                return data["abstract"]
+                
+        return None
+    except Exception as e:
+        logging.error(f"Semantic Scholar fetch failed: {e}")
+        return None
+
+def check_unpaywall(doi):
+    """
+    Check Unpaywall for open-access PDF links.
+    """
+    if not validate_doi(doi):
+        logging.error(f"Invalid DOI format for Unpaywall: {doi}")
+        return None
+
+    try:
+        url = f"https://api.unpaywall.org/v2/{doi}?email={Entrez.email}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            best_oa_location = data.get('best_oa_location', {})
+            if best_oa_location:
+                return best_oa_location.get('url_for_pdf') or best_oa_location.get('url')
+        return None
+    except Exception as e:
+        logging.error(f"Unpaywall check failed for DOI {doi}: {e}")
+        return None
+
+def extract_from_unpaywall_pdf(doi):
+    """Extract text from PDF found via Unpaywall."""
+    pdf_url = check_unpaywall(doi)
+    if pdf_url:
+        return extract_text_from_pdf_url(pdf_url)
+    return None
+
+def fetch_from_scihub(doi, enable_scihub=False):
+    """Fetch PDF from SciHub (if enabled and legal in your jurisdiction)."""
+    if not enable_scihub:
+        return None
+        
+    try:
+        # SciHub domains change frequently
+        scihub_domains = [
+            "https://sci-hub.se/",
+            "https://sci-hub.st/",
+            "https://sci-hub.ru/"
+        ]
+        
+        for domain in scihub_domains:
+            try:
+                response = requests.get(f"{domain}{doi}", timeout=10)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    iframe = soup.find('iframe')
+                    if iframe and iframe.get('src'):
+                        pdf_url = iframe.get('src')
+                        if pdf_url.startswith('//'):
+                            pdf_url = 'https:' + pdf_url
+                        return extract_text_from_pdf_url(pdf_url)
+            except:
+                continue
+                
+        return None
+    except Exception as e:
+        logging.error(f"SciHub fetch failed: {e}")
+        return None
+
+def search_paper_by_title(title):
+    """
+    Search for a paper by title and return DOI and PMID.
+    
+    Args:
+        title: Paper title
+        
+    Returns:
+        tuple: (doi, pmid)
+    """
+    # Clean up the title
+    title = re.sub(r'\s+', ' ', title).strip()
+    
+    try:
+        # Search PubMed
+        handle = Entrez.esearch(db="pubmed", term=f"{title}[Title]", retmax=1)
+        results = Entrez.read(handle)
+        handle.close()
+        
+        if results["IdList"]:
+            pmid = results["IdList"][0]
+            
+            # Get DOI from PubMed
+            handle = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
+            records = Entrez.read(handle)
+            handle.close()
+            
+            if records["PubmedArticle"]:
+                article = records["PubmedArticle"][0]
+                article_id_list = article.get("PubmedData", {}).get("ArticleIdList", [])
+                doi = None
+                
+                for article_id in article_id_list:
+                    if article_id.attributes.get("IdType") == "doi":
+                        doi = str(article_id)
+                        break
+                
+                return doi, pmid
+    except Exception as e:
+        logging.error(f"Error searching paper by title via PubMed: {e}")
+    
+    # Try CrossRef as a backup
+    try:
+        url = f"https://api.crossref.org/works?query.title={title}&rows=1"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            if data["message"]["items"]:
+                item = data["message"]["items"][0]
+                doi = item.get("DOI")
+                return doi, None
+    except Exception as e:
+        logging.error(f"CrossRef search failed: {e}")
+    
+    return None, None
+
+def fetch_aacr_fulltext(doi):
+    """
+    Specifically handle American Association for Cancer Research journals.
+    """
+    if not doi.startswith('10.1158'):
+        return None
+        
+    try:
+        article_id = doi.split('/')[-1]
+        
+        # Try multiple URL patterns
+        urls_to_try = [
+            f"https://aacrjournals.org/crc/article/{article_id}",
+            f"https://aacrjournals.org/crc/article-pdf/{article_id}",
+            f"https://aacrjournals.org/crc/article-lookup/doi/{doi}",
+            f"https://aacrjournals.org/crc/article/doi/{doi}",
+            f"https://cancerres.aacrjournals.org/content/doi/{doi}"
+        ]
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        for url in urls_to_try:
+            try:
+                response = requests.get(url, headers=headers, timeout=20)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    
+                    # Try multiple selectors specific to AACR journals
+                    selectors = [
+                        'div.article-body',
+                        'div.hlFld-Fulltext',
+                        'section.article-section__full',
+                        'div.article__sections'
+                    ]
+                    
+                    for selector in selectors:
+                        elements = soup.select(selector)
+                        if elements:
+                            text = " ".join([el.get_text(separator=' ', strip=True) for el in elements])
+                            if text and len(text) > 500:  # Sanity check for content
+                                return text
+                            
+                    # Look for PDF link
+                    pdf_link = soup.select_one('a[href*=".pdf"], a.pdf-link')
+                    if pdf_link and pdf_link.get('href'):
+                        pdf_url = pdf_link['href']
+                        if not pdf_url.startswith('http'):
+                            pdf_url = f"https://aacrjournals.org{pdf_url}"
+                        return extract_text_from_pdf_url(pdf_url)
+            except Exception as e:
+                logging.error(f"AACR fetch attempt failed for URL {url}: {e}")
+                continue
+                
+        return None
+    except Exception as e:
+        logging.error(f"AACR fetch failed: {e}")
+        return None
+
+def get_specific_paper_text(doi):
+    """Hardcoded handling for specific papers that are problematic."""
+    special_papers = {
+        "10.1158/2767-9764.CRC-23-0566": {
+            "url": "https://aacrjournals.org/crc/article/3/2/083/729101/Epigenetic-Induction-of-Cancer-Testis-Antigens-and"
+        }
+    }
+    
+    if doi in special_papers:
+        paper_info = special_papers[doi]
+        try:
+            response = requests.get(paper_info["url"], headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                article_text = soup.select('div.article-body')
+                if article_text:
+                    return " ".join([section.get_text() for section in article_text])
+        except Exception:
+            pass
+    
+    return None

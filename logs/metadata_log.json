@@ -1,0 +1,174 @@
+[
+  {
+    "session_id": "1eff0256-2838-4737-83ca-cc421839e906",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "decitabine",
+      "DAC",
+      "Decitabine"
+    ],
+    "timestamp": "2025-04-30T20:24:50.274902"
+  },
+  {
+    "session_id": "14bccbac-d37b-4fa9-a161-80a851a297dc",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "decitabine",
+      "Decitabine",
+      "DAC"
+    ],
+    "timestamp": "2025-04-30T20:31:00.267188"
+  },
+  {
+    "session_id": "8b45c18e-0b96-41e3-87b9-9e690d944901",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "Decitabine",
+      "DAC",
+      "decitabine"
+    ],
+    "timestamp": "2025-04-30T20:36:26.534562"
+  },
+  {
+    "session_id": "e9349133-0358-4329-aac5-f715ac6dffe0",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "decitabine",
+      "DAC",
+      "Decitabine"
+    ],
+    "timestamp": "2025-04-30T21:15:31.700283"
+  },
+  {
+    "session_id": "49e5bb21-e8d6-401c-9330-ba33a9c2e44d",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "Decitabine",
+      "decitabine",
+      "DAC"
+    ],
+    "timestamp": "2025-04-30T21:19:41.676133"
+  },
+  {
+    "session_id": "a5df7159-8eaa-4b01-85e0-5cfb20476ebb",
+    "doi": "10.1158/2767-9764.crc-23-0566",
+    "pmid": null,
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [],
+    "timestamp": "2025-04-30T21:57:49.664918"
+  },
+  {
+    "session_id": "ea17b50e-5836-4fe5-a2a4-42f8787f4780",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "DAC",
+      "decitabine",
+      "Decitabine"
+    ],
+    "timestamp": "2025-04-30T22:02:00.952515"
+  },
+  {
+    "session_id": "e18eab8b-77c7-43b9-8522-25fdc295f8a6",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "DAC",
+      "Decitabine",
+      "decitabine"
+    ],
+    "timestamp": "2025-04-30T22:14:06.557273"
+  },
+  {
+    "session_id": "20d39763-e51b-40ac-806f-24569b2467c3",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "Decitabine",
+      "decitabine",
+      "DAC"
+    ],
+    "timestamp": "2025-04-30T22:23:58.280598"
+  },
+  {
+    "session_id": "705edb2a-e9e4-4106-b760-6341fac9be41",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "Decitabine",
+      "decitabine",
+      "DAC"
+    ],
+    "timestamp": "2025-04-30T22:39:25.352500"
+  },
+  {
+    "session_id": "bcdcd7df-68e2-44c6-8f6c-98b57a29e78b",
+    "doi": "10.1158/2767-9764.CRC-23-0566",
+    "pmid": "38856710",
+    "title": null,
+    "authors": null,
+    "journal": null,
+    "year": null,
+    "datasets": [],
+    "treatments": [
+      "Decitabine",
+      "DAC",
+      "decitabine"
+    ],
+    "timestamp": "2025-04-30T22:57:19.858386"
+  }
+]
