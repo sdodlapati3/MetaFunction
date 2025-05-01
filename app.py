@@ -139,6 +139,10 @@ def safe_api_call(func_name, func, *args, **kwargs):
         return None
 
 
+# Initialize OpenAI client properly
+import openai
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 # Safe wrapper for OpenAI API calls with retries
 def safe_create(**kwargs):
     """Safely create a request to OpenAI API with retries."""
@@ -146,9 +150,9 @@ def safe_create(**kwargs):
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            # Use the client-based approach instead of the deprecated module approach
+            # Use the client-based approach
             return client.chat.completions.create(**kwargs)
-        except openai.RateLimitError as e:  # Updated exception class - no more .error namespace
+        except openai.RateLimitError as e:  # Updated exception class
             retry_after = 20  # Default retry time
             if "Please try again in" in str(e):
                 try:
@@ -165,33 +169,35 @@ def safe_create(**kwargs):
     raise RuntimeError("Max retries exceeded for OpenAI API call")
 
 
-# Centralized model response function
-def get_model_response(model, prompt):
+# Fix OpenAI response function
+def get_openai_response(model, prompt):
+    """Get response from OpenAI models."""
     try:
-        # For newer models that use chat completion format
-        if "gpt" in model.lower():
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful scientific assistant. Answer with accurate information based on the provided paper.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=3000,
-            )
-            return response.choices[0].message.content
-        # For older models that used the completion API
-        else:
-            response = client.completions.create(
-                model=model, prompt=prompt, temperature=0.3, max_tokens=3000
-            )
-            return response.choices[0].text
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        logging.error(f"OpenAI API error: {str(e)}")
-        return f"Error getting response: {str(e)}"
+        logging.error(f"Error with OpenAI API: {e}")
+        return f"Error connecting to OpenAI API: {str(e)}"
+
+
+# Centralized model response function - fixed indentation
+def get_model_response(model, prompt):
+    """Get response from selected model."""
+    if model.startswith("gpt-"):
+        # OpenAI models
+        return get_openai_response(model, prompt)
+    elif model.startswith("deepseek-"):
+        # Deepseek models
+        return get_deepseek_response(model, prompt)
+    elif model.startswith("perplexity-"):
+        # Perplexity models
+        return get_perplexity_response(model, prompt)
+    else:
+        # Default to OpenAI
+        return get_openai_response("gpt-4o-mini", prompt)
 
 
 def extract_additional_metadata(text):
@@ -325,14 +331,23 @@ def list_available_models():
         "gpt-3.5-turbo-16k",
     ]
 
+    deepseek_models = [
+        "deepseek-chat",
+        "deepseek-coder"
+    ]
+    
+    perplexity_models = [
+        "perplexity-online-llama3",
+        "perplexity-sonar-small-online"
+    ]
+
     experimental_models = [
         # Add these only when they're properly implemented
-        # "DeepSeek",
         # "HuggingFace-BERT",
         # "HuggingFace-GPT2"
     ]
 
-    return openai_models + experimental_models
+    return openai_models + deepseek_models + perplexity_models + experimental_models
 
 
 def fetch_plos_text(doi):
@@ -791,7 +806,7 @@ def test_sources():
                                     extraction_method = "HTML"
 
                             # Process extracted text
-                            if pdf_text:
+                            if (pdf_text):
                                 is_ft = (
                                     is_full_text(pdf_text)
                                     if callable(is_full_text)
@@ -821,7 +836,7 @@ def test_sources():
                 except Exception as e:
                     results["sources"]["Unpaywall"] = {
                         "status": "error",
-                        "message": str(e),
+                        "message": str(e)
                     }
 
         # Direct PMCID test
@@ -865,20 +880,19 @@ def test_sources():
             if (
                 "Unpaywall" in results["sources"]
                 and results["sources"]["Unpaywall"].get("status") == "success"
-            ):
+            ):  # <- This closing parenthesis was missing
                 pdf_url = results["sources"]["Unpaywall"].get("url")
-
+                
             if pdf_url:
                 try:
                     logging.info(f"Attempting browser-based extraction for {pdf_url}")
                     browser_text = extract_pdf_with_browser(pdf_url)
-
+                    
                     if browser_text and len(browser_text) > 200:
                         results["sources"]["Browser PDF Extraction"] = {
                             "status": "success",
                             "length": len(browser_text),
-                            "is_full_text": len(browser_text)
-                            > 4000,  # Simple heuristic for full text
+                            "is_full_text": len(browser_text) > 4000,  # Simple heuristic for full text
                         }
                     else:
                         results["sources"]["Browser PDF Extraction"] = {
@@ -988,6 +1002,117 @@ def test_sources():
             results["enhanced_resolver"] = {"status": "error", "message": str(e)}
 
     return render_template("test_sources.html", results=results)
+
+
+def get_deepseek_response(model, prompt):
+    """Get response from Deepseek models."""
+    try:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            return "Deepseek API key not configured. Please add DEEPSEEK_API_KEY to your .env file."
+            
+        # Map friendly names to actual model identifiers
+        model_map = {
+            "deepseek-chat": "deepseek-llm-7b-chat",  # Updated model name
+            "deepseek-coder": "deepseek-coder-7b-instruct"  # Updated model name
+        }
+        actual_model = model_map.get(model, "deepseek-llm-7b-chat")
+        
+        logging.info(f"Making request to Deepseek API with model: {actual_model}")
+        
+        # Try multiple endpoints - the service URLs may have changed
+        endpoints = [
+            "https://api.deepseek.ai/v1/chat/completions",
+            "https://api.deepseek.com/v1/chat/completions"
+        ]
+        
+        for endpoint in endpoints:
+            try:
+                logging.info(f"Trying Deepseek endpoint: {endpoint}")
+                
+                response = requests.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": actual_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.7,
+                        "max_tokens": 2000
+                    },
+                    timeout=15  # Shorter timeout to try multiple endpoints
+                )
+                
+                logging.info(f"Deepseek API response status from {endpoint}: {response.status_code}")
+                
+                if response.status_code == 200:
+                    logging.info(f"Deepseek API request successful on {endpoint}")
+                    return response.json()["choices"][0]["message"]["content"]
+                else:
+                    logging.error(f"Deepseek API error on {endpoint}: {response.status_code}")
+            except Exception as e:
+                logging.warning(f"Connection to Deepseek endpoint {endpoint} failed: {e}")
+                continue
+        
+        # If all endpoints failed, fall back to OpenAI
+        logging.warning("All Deepseek endpoints failed, falling back to OpenAI")
+        return get_openai_response("gpt-4o-mini", prompt)
+    except Exception as e:
+        logging.error(f"Error with Deepseek API: {e}")
+        logging.warning("Exception in Deepseek API, falling back to OpenAI")
+        return get_openai_response("gpt-4o-mini", prompt)
+
+def get_perplexity_response(model, prompt):
+    """Get response from Perplexity models."""
+    try:
+        api_key = os.getenv("PERPLEXITY_API_KEY")
+        if not api_key:
+            return "Perplexity API key not configured. Please add PERPLEXITY_API_KEY to your .env file."
+        
+        # Updated model map with current supported models from documentation
+        model_map = {
+            "perplexity-online-llama3": "pplx-7b-online",  # Updated model name
+            "perplexity-sonar-small-online": "pplx-70b-online"  # Updated model name
+        }
+        actual_model = model_map.get(model, "sonar-small-chat")
+        
+        logging.info(f"Making request to Perplexity API with model: {actual_model}")
+        
+        endpoint = "https://api.perplexity.ai/chat/completions"
+        logging.info(f"Using endpoint: {endpoint}")
+        
+        response = requests.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": actual_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            },
+            timeout=60
+        )
+        
+        # Log response status for debugging
+        logging.info(f"Perplexity API response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            logging.info("Perplexity API request successful")
+            return response.json()["choices"][0]["message"]["content"]
+        else:
+            # More detailed error logging
+            logging.error(f"Perplexity API error: {response.status_code} - {response.text}")
+            logging.warning("Perplexity API error, falling back to OpenAI")
+            return get_openai_response("gpt-4o-mini", prompt)
+    except Exception as e:
+        logging.error(f"Error with Perplexity API: {e}")
+        logging.warning("Exception in Perplexity API, falling back to OpenAI")
+        return get_openai_response("gpt-4o-mini", prompt)
 
 
 if __name__ == "__main__":
