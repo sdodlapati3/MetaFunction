@@ -1,0 +1,660 @@
+# Multi-Region Deployment Configuration for MetaFunction
+# Global deployment strategy with cross-region replication and failover
+
+---
+# Global Load Balancer Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: global-lb-config
+  namespace: metafunction
+data:
+  regions.yaml: |
+    regions:
+      primary:
+        name: "us-west-2"
+        endpoint: "metafunction-us-west-2.company.com"
+        weight: 70
+        health_check: "/health"
+        
+      secondary:
+        name: "us-east-1"
+        endpoint: "metafunction-us-east-1.company.com"
+        weight: 20
+        health_check: "/health"
+        
+      tertiary:
+        name: "eu-west-1"
+        endpoint: "metafunction-eu-west-1.company.com"
+        weight: 10
+        health_check: "/health"
+    
+    failover_strategy:
+      auto_failover: true
+      health_check_interval: "30s"
+      failure_threshold: 3
+      recovery_threshold: 2
+      
+    traffic_routing:
+      geo_routing: true
+      latency_based: true
+      session_affinity: true
+---
+# Region-Specific Deployment Template
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: region-deployment-template
+  namespace: metafunction
+data:
+  deployment-template.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: metafunction-{{.Region}}
+      namespace: metafunction
+      labels:
+        app: metafunction
+        region: "{{.Region}}"
+        tier: application
+    spec:
+      replicas: {{.Replicas}}
+      selector:
+        matchLabels:
+          app: metafunction
+          region: "{{.Region}}"
+      template:
+        metadata:
+          labels:
+            app: metafunction
+            region: "{{.Region}}"
+        spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: In
+                    values:
+                    - "{{.Region}}"
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                      - metafunction
+                  topologyKey: kubernetes.io/hostname
+          containers:
+          - name: metafunction
+            image: metafunction:{{.Version}}
+            ports:
+            - containerPort: 8000
+            env:
+            - name: REGION
+              value: "{{.Region}}"
+            - name: DATABASE_URL
+              value: "postgresql://{{.DatabaseHost}}/metafunction"
+            - name: REDIS_URL
+              value: "redis://{{.RedisHost}}:6379"
+            - name: ENVIRONMENT
+              value: "production"
+            resources:
+              limits:
+                cpu: "{{.CPU.Limit}}"
+                memory: "{{.Memory.Limit}}"
+              requests:
+                cpu: "{{.CPU.Request}}"
+                memory: "{{.Memory.Request}}"
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 8000
+              initialDelaySeconds: 5
+              periodSeconds: 5
+---
+# Cross-Region Database Replication
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-primary
+  namespace: metafunction
+spec:
+  instances: 3
+  primaryUpdateStrategy: unsupervised
+  
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "1GB"
+      wal_level: "replica"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      hot_standby: "on"
+      
+  bootstrap:
+    initdb:
+      database: metafunction
+      owner: metafunction
+      secret:
+        name: postgres-credentials
+        
+  storage:
+    size: 100Gi
+    storageClass: fast-ssd
+    
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://metafunction-backups/postgres"
+      s3Credentials:
+        accessKeyId:
+          name: backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: backup-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        retention: "5d"
+      data:
+        retention: "30d"
+        
+  replica:
+    enabled: true
+    source: "postgres-primary"
+---
+# Read Replica for Secondary Regions
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-replica-us-east-1
+  namespace: metafunction
+spec:
+  instances: 2
+  
+  bootstrap:
+    pg_basebackup:
+      source: postgres-primary
+      
+  replica:
+    enabled: true
+    source: "postgres-primary"
+    
+  storage:
+    size: 100Gi
+    storageClass: standard-ssd
+---
+# Global Redis Cluster Configuration
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: RedisCluster
+metadata:
+  name: redis-global
+  namespace: metafunction
+spec:
+  clusterSize: 6
+  clusterVersion: v7.0.5
+  
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:1.44.0
+    
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: fast-ssd
+        
+  globalConfig:
+    maxmemory: 1gb
+    maxmemory-policy: allkeys-lru
+    save: "900 1 300 10 60 10000"
+    
+  nodeSelector:
+    node-type: redis
+    
+  tolerations:
+  - key: "redis"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+---
+# Cross-Region Service Mesh Configuration
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: metafunction-global-gateway
+  namespace: metafunction
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: metafunction-tls
+    hosts:
+    - "metafunction.company.com"
+    - "*.metafunction.company.com"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: metafunction-global-routing
+  namespace: metafunction
+spec:
+  hosts:
+  - "metafunction.company.com"
+  gateways:
+  - metafunction-global-gateway
+  http:
+  - match:
+    - headers:
+        region:
+          exact: us-west-2
+    route:
+    - destination:
+        host: metafunction-us-west-2
+        port:
+          number: 8000
+      weight: 100
+  - match:
+    - headers:
+        region:
+          exact: us-east-1
+    route:
+    - destination:
+        host: metafunction-us-east-1
+        port:
+          number: 8000
+      weight: 100
+  - match:
+    - headers:
+        region:
+          exact: eu-west-1
+    route:
+    - destination:
+        host: metafunction-eu-west-1
+        port:
+          number: 8000
+      weight: 100
+  - route:  # Default routing with weights
+    - destination:
+        host: metafunction-us-west-2
+        port:
+          number: 8000
+      weight: 70
+    - destination:
+        host: metafunction-us-east-1
+        port:
+          number: 8000
+      weight: 20
+    - destination:
+        host: metafunction-eu-west-1
+        port:
+          number: 8000
+      weight: 10
+    fault:
+      delay:
+        percentage:
+          value: 0.1
+        fixedDelay: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+---
+# Cross-Region Service Discovery
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: metafunction-us-east-1
+  namespace: metafunction
+spec:
+  hosts:
+  - metafunction-us-east-1.company.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 8000
+    name: http
+    protocol: HTTP
+  location: MESH_EXTERNAL
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: metafunction-eu-west-1
+  namespace: metafunction
+spec:
+  hosts:
+  - metafunction-eu-west-1.company.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 8000
+    name: http
+    protocol: HTTP
+  location: MESH_EXTERNAL
+  resolution: DNS
+---
+# Global Health Check Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: global-health-checker
+  namespace: metafunction
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: global-health-checker
+  template:
+    metadata:
+      labels:
+        app: global-health-checker
+    spec:
+      containers:
+      - name: health-checker
+        image: curlimages/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          while true; do
+            echo "Checking regional health endpoints..."
+            
+            # Check US West 2
+            if curl -f -s --max-time 5 https://metafunction-us-west-2.company.com/health > /dev/null; then
+              echo "US-West-2: HEALTHY"
+              kubectl annotate service metafunction-us-west-2 health.status=healthy
+            else
+              echo "US-West-2: UNHEALTHY"
+              kubectl annotate service metafunction-us-west-2 health.status=unhealthy
+            fi
+            
+            # Check US East 1
+            if curl -f -s --max-time 5 https://metafunction-us-east-1.company.com/health > /dev/null; then
+              echo "US-East-1: HEALTHY"
+              kubectl annotate service metafunction-us-east-1 health.status=healthy
+            else
+              echo "US-East-1: UNHEALTHY"
+              kubectl annotate service metafunction-us-east-1 health.status=unhealthy
+            fi
+            
+            # Check EU West 1
+            if curl -f -s --max-time 5 https://metafunction-eu-west-1.company.com/health > /dev/null; then
+              echo "EU-West-1: HEALTHY"
+              kubectl annotate service metafunction-eu-west-1 health.status=healthy
+            else
+              echo "EU-West-1: UNHEALTHY"
+              kubectl annotate service metafunction-eu-west-1 health.status=unhealthy
+            fi
+            
+            sleep 30
+          done
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 50m
+            memory: 32Mi
+---
+# Regional Failover Policy
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: metafunction-failover
+  namespace: metafunction
+spec:
+  host: metafunction.company.com
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    loadBalancer:
+      localityLbSetting:
+        enabled: true
+        distribute:
+        - from: "region/us-west-2/*"
+          to:
+            "region/us-west-2/*": 80
+            "region/us-east-1/*": 20
+        - from: "region/us-east-1/*"
+          to:
+            "region/us-east-1/*": 80
+            "region/us-west-2/*": 20
+        - from: "region/eu-west-1/*"
+          to:
+            "region/eu-west-1/*": 80
+            "region/us-east-1/*": 20
+        failover:
+        - from: us-west-2
+          to: us-east-1
+        - from: us-east-1
+          to: us-west-2
+        - from: eu-west-1
+          to: us-east-1
+    outlierDetection:
+      consecutiveErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Data Synchronization Job
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cross-region-sync
+  namespace: metafunction
+spec:
+  schedule: "*/15 * * * *"  # Every 15 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: data-sync
+            image: metafunction-sync:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting cross-region data synchronization..."
+              
+              # Sync cache data between regions
+              redis-cli -h redis-us-west-2 --scan --pattern "cache:*" | \
+              while read key; do
+                value=$(redis-cli -h redis-us-west-2 get "$key")
+                ttl=$(redis-cli -h redis-us-west-2 ttl "$key")
+                
+                # Replicate to other regions
+                redis-cli -h redis-us-east-1 setex "$key" "$ttl" "$value"
+                redis-cli -h redis-eu-west-1 setex "$key" "$ttl" "$value"
+              done
+              
+              # Sync configuration data
+              kubectl get configmap -n metafunction -o yaml | \
+              kubectl apply --context=us-east-1 -f -
+              kubectl get configmap -n metafunction -o yaml | \
+              kubectl apply --context=eu-west-1 -f -
+              
+              echo "Cross-region synchronization completed"
+            env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: password
+---
+# Global CDN Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-config
+  namespace: metafunction
+data:
+  cloudflare.yaml: |
+    zones:
+      metafunction.company.com:
+        settings:
+          cache_level: aggressive
+          browser_cache_ttl: 14400
+          edge_cache_ttl: 7200
+          always_online: true
+          
+        page_rules:
+        - url: "metafunction.company.com/static/*"
+          settings:
+            cache_level: cache_everything
+            edge_cache_ttl: 86400
+            
+        - url: "metafunction.company.com/api/*"
+          settings:
+            cache_level: bypass
+            
+        load_balancing:
+          pools:
+          - name: us-west-2
+            origins:
+            - name: us-west-2-origin
+              address: metafunction-us-west-2.company.com
+              weight: 1
+              enabled: true
+              
+          - name: us-east-1
+            origins:
+            - name: us-east-1-origin
+              address: metafunction-us-east-1.company.com
+              weight: 1
+              enabled: true
+              
+          - name: eu-west-1
+            origins:
+            - name: eu-west-1-origin
+              address: metafunction-eu-west-1.company.com
+              weight: 1
+              enabled: true
+              
+          load_balancer:
+            name: metafunction-global-lb
+            default_pools: ["us-west-2", "us-east-1", "eu-west-1"]
+            fallback_pool: "us-east-1"
+            region_pools:
+              US: ["us-west-2", "us-east-1"]
+              EU: ["eu-west-1", "us-east-1"]
+              ASIA: ["us-west-2"]
+---
+# Multi-Region Monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: multi-region-alerts
+  namespace: metafunction
+spec:
+  groups:
+  - name: multi-region.rules
+    rules:
+    - alert: RegionDown
+      expr: up{job="metafunction-health-check"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Region {{ $labels.region }} is down"
+        description: "MetaFunction service in region {{ $labels.region }} has been down for more than 5 minutes"
+        
+    - alert: CrossRegionLatencyHigh
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{source_region!="target_region"}[5m])) > 1
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High cross-region latency"
+        description: "95th percentile cross-region latency is {{ $value }}s between {{ $labels.source_region }} and {{ $labels.target_region }}"
+        
+    - alert: DataSyncFailure
+      expr: increase(data_sync_failures_total[1h]) > 3
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Cross-region data sync failures"
+        description: "{{ $value }} data sync failures detected in the last hour"
+        
+    - alert: RegionTrafficImbalance
+      expr: abs((rate(http_requests_total{region="us-west-2"}[5m]) / rate(http_requests_total[5m])) - 0.7) > 0.2
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Traffic distribution imbalance"
+        description: "Traffic distribution to primary region is significantly different from expected 70%"
+---
+# Geo-Location Routing Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geo-routing-config
+  namespace: metafunction
+data:
+  geoip.conf: |
+    # Geo-location based routing rules
+    geo $closest_region {
+        default us-west-2;
+        
+        # North America
+        include /etc/nginx/geo/us.conf;
+        include /etc/nginx/geo/ca.conf;
+        include /etc/nginx/geo/mx.conf;
+        
+        # Europe
+        include /etc/nginx/geo/eu.conf;
+        
+        # Asia Pacific
+        include /etc/nginx/geo/ap.conf;
+    }
+    
+    map $closest_region $backend_pool {
+        us-west-2 "us-west-2-pool";
+        us-east-1 "us-east-1-pool";
+        eu-west-1 "eu-west-1-pool";
+        default "us-west-2-pool";
+    }
+  
+  us.conf: |
+    # United States IP ranges -> us-west-2
+    # Major US IP blocks
+    8.8.8.0/24 us-west-2;
+    
+  eu.conf: |
+    # European IP ranges -> eu-west-1
+    # Major EU IP blocks
+    
+  ap.conf: |
+    # Asia Pacific IP ranges -> us-west-2 (closest for now)
+    # Major AP IP blocks

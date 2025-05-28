@@ -1,0 +1,763 @@
+# Advanced Monitoring and Distributed Tracing for MetaFunction
+# Comprehensive observability stack with Jaeger, OpenTelemetry, and enhanced metrics
+
+---
+# Observability Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    name: observability
+---
+# Jaeger Operator for Distributed Tracing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-operator
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: jaeger-operator
+  template:
+    metadata:
+      labels:
+        name: jaeger-operator
+    spec:
+      serviceAccountName: jaeger-operator
+      containers:
+      - name: jaeger-operator
+        image: jaegertracing/jaeger-operator:1.52.0
+        ports:
+        - containerPort: 8383
+          name: http-metrics
+        - containerPort: 9443
+          name: webhook-server
+        env:
+        - name: WATCH_NAMESPACE
+          value: ""
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPERATOR_NAME
+          value: "jaeger-operator"
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+---
+# Jaeger Instance
+apiVersion: jaegertracing.io/v1
+kind: Jaeger
+metadata:
+  name: metafunction-jaeger
+  namespace: observability
+spec:
+  strategy: production
+  storage:
+    type: elasticsearch
+    elasticsearch:
+      nodeCount: 3
+      redundancyPolicy: SingleRedundancy
+      storage:
+        storageClassName: fast-ssd
+        size: 50Gi
+  collector:
+    maxReplicas: 5
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  query:
+    replicas: 2
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  agent:
+    strategy: DaemonSet
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+---
+# OpenTelemetry Collector Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'metafunction'
+            static_configs:
+            - targets: ['metafunction:8000']
+          - job_name: 'postgres'
+            static_configs:
+            - targets: ['postgres:5432']
+          - job_name: 'redis'
+            static_configs:
+            - targets: ['redis:6379']
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          thrift_compact:
+            endpoint: 0.0.0.0:6831
+          thrift_binary:
+            endpoint: 0.0.0.0:6832
+      zipkin:
+        endpoint: 0.0.0.0:9411
+      
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+      resource:
+        attributes:
+        - key: service.name
+          value: metafunction
+          action: upsert
+        - key: environment
+          value: production
+          action: upsert
+      
+    exporters:
+      jaeger:
+        endpoint: metafunction-jaeger-collector:14250
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: metafunction
+        const_labels:
+          environment: production
+      elasticsearch:
+        endpoints: ["elasticsearch:9200"]
+        index: "otel-logs"
+      logging:
+        loglevel: debug
+      
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp, jaeger, zipkin]
+          processors: [memory_limiter, resource, batch]
+          exporters: [jaeger, logging]
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, resource, batch]
+          exporters: [prometheus, logging]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]
+          exporters: [elasticsearch, logging]
+      
+      extensions: [health_check, pprof, zpages]
+---
+# OpenTelemetry Collector Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: observability
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.91.0
+        args:
+          - --config=/etc/config/config.yaml
+        ports:
+        - containerPort: 4317  # OTLP gRPC
+        - containerPort: 4318  # OTLP HTTP
+        - containerPort: 8889  # Prometheus metrics
+        - containerPort: 14250 # Jaeger gRPC
+        - containerPort: 14268 # Jaeger HTTP
+        - containerPort: 9411  # Zipkin
+        - containerPort: 8888  # Metrics endpoint
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+        env:
+        - name: GOGC
+          value: "80"
+      volumes:
+      - name: config-volume
+        configMap:
+          name: otel-collector-config
+---
+# OpenTelemetry Collector Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: observability
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+  - name: prometheus
+    port: 8889
+    targetPort: 8889
+  - name: jaeger-grpc
+    port: 14250
+    targetPort: 14250
+  - name: jaeger-http
+    port: 14268
+    targetPort: 14268
+  - name: zipkin
+    port: 9411
+    targetPort: 9411
+  type: ClusterIP
+---
+# Enhanced Grafana Configuration for Distributed Tracing
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      
+    - name: Jaeger
+      type: jaeger
+      access: proxy
+      url: http://metafunction-jaeger-query:16686
+      
+    - name: Elasticsearch
+      type: elasticsearch
+      access: proxy
+      url: http://elasticsearch:9200
+      database: "[otel-logs-]YYYY.MM.DD"
+      interval: Daily
+      timeField: "@timestamp"
+      
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki:3100
+---
+# Application Performance Monitoring Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apm-dashboard
+  namespace: observability
+data:
+  apm-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "MetaFunction Application Performance Monitoring",
+        "tags": ["apm", "tracing", "performance"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{service=\"metafunction\"}[5m])",
+                "legendFormat": "{{ method }} {{ endpoint }}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Requests/sec"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Response Time Percentiles",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{service=\"metafunction\"}[5m]))",
+                "legendFormat": "50th percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service=\"metafunction\"}[5m]))",
+                "legendFormat": "95th percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{service=\"metafunction\"}[5m]))",
+                "legendFormat": "99th percentile"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Duration (seconds)"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Error Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{service=\"metafunction\",status_code=~\"5..\"}[5m]) / rate(http_requests_total{service=\"metafunction\"}[5m]) * 100",
+                "legendFormat": "Error Rate %"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    { "color": "green", "value": 0 },
+                    { "color": "yellow", "value": 1 },
+                    { "color": "red", "value": 5 }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 4,
+            "title": "Database Connection Pool",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "postgres_connection_pool_active{service=\"metafunction\"}",
+                "legendFormat": "Active Connections"
+              },
+              {
+                "expr": "postgres_connection_pool_idle{service=\"metafunction\"}",
+                "legendFormat": "Idle Connections"
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Cache Hit Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(redis_cache_hits_total{service=\"metafunction\"}[5m]) / (rate(redis_cache_hits_total{service=\"metafunction\"}[5m]) + rate(redis_cache_misses_total{service=\"metafunction\"}[5m])) * 100",
+                "legendFormat": "Cache Hit Rate %"
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "title": "Top Slow Traces",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "topk(10, jaeger_trace_duration_seconds{service=\"metafunction\"})",
+                "format": "table"
+              }
+            ]
+          },
+          {
+            "id": 7,
+            "title": "Service Dependencies",
+            "type": "nodeGraph",
+            "targets": [
+              {
+                "expr": "jaeger_service_dependencies{source_service=\"metafunction\"}",
+                "format": "table"
+              }
+            ]
+          },
+          {
+            "id": 8,
+            "title": "Custom Business Metrics",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(paper_queries_total[5m])",
+                "legendFormat": "Paper Queries/sec"
+              },
+              {
+                "expr": "rate(successful_paper_retrievals_total[5m])",
+                "legendFormat": "Successful Retrievals/sec"
+              },
+              {
+                "expr": "rate(cache_operations_total[5m])",
+                "legendFormat": "Cache Operations/sec"
+              }
+            ]
+          }
+        ]
+      }
+    }
+---
+# Distributed Tracing Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: distributed-tracing-alerts
+  namespace: observability
+spec:
+  groups:
+  - name: tracing.rules
+    rules:
+    - alert: HighLatency
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service="metafunction"}[5m])) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High latency detected"
+        description: "95th percentile latency is {{ $value }}s for service {{ $labels.service }}"
+        
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{service="metafunction",status_code=~"5.."}[5m]) / rate(http_requests_total{service="metafunction"}[5m]) > 0.05
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}"
+        
+    - alert: TracingDataLoss
+      expr: increase(jaeger_spans_received_total[5m]) - increase(jaeger_spans_stored_total[5m]) > 100
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Tracing data loss detected"
+        description: "{{ $value }} spans lost in the last 5 minutes"
+        
+    - alert: ServiceDependencyDown
+      expr: up{job="metafunction-dependencies"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Service dependency is down"
+        description: "Dependency {{ $labels.instance }} is not responding"
+---
+# Custom Metrics Instrumentation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: instrumentation-config
+  namespace: metafunction
+data:
+  instrumentation.py: |
+    import time
+    import functools
+    from opentelemetry import trace, metrics
+    from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+    from opentelemetry.exporter.prometheus import PrometheusMetricReader
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.instrumentation.flask import FlaskInstrumentor
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+    from opentelemetry.instrumentation.redis import RedisInstrumentor
+    
+    # Initialize tracing
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer(__name__)
+    
+    # Configure Jaeger exporter
+    jaeger_exporter = JaegerExporter(
+        agent_host_name="otel-collector.observability.svc.cluster.local",
+        agent_port=6831,
+    )
+    
+    span_processor = BatchSpanProcessor(jaeger_exporter)
+    trace.get_tracer_provider().add_span_processor(span_processor)
+    
+    # Initialize metrics
+    metrics.set_meter_provider(MeterProvider(metric_readers=[PrometheusMetricReader()]))
+    meter = metrics.get_meter(__name__)
+    
+    # Custom metrics
+    paper_queries_counter = meter.create_counter(
+        "paper_queries_total",
+        description="Total number of paper queries",
+        unit="1"
+    )
+    
+    successful_retrievals_counter = meter.create_counter(
+        "successful_paper_retrievals_total",
+        description="Total number of successful paper retrievals",
+        unit="1"
+    )
+    
+    cache_operations_counter = meter.create_counter(
+        "cache_operations_total",
+        description="Total number of cache operations",
+        unit="1"
+    )
+    
+    query_duration_histogram = meter.create_histogram(
+        "query_duration_seconds",
+        description="Time spent processing queries",
+        unit="s"
+    )
+    
+    # Auto-instrumentation setup
+    def setup_instrumentation(app):
+        FlaskInstrumentor().instrument_app(app)
+        RequestsInstrumentor().instrument()
+        Psycopg2Instrumentor().instrument()
+        RedisInstrumentor().instrument()
+    
+    # Custom decorators for business logic tracing
+    def trace_business_operation(operation_name):
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                with tracer.start_as_current_span(operation_name) as span:
+                    span.set_attribute("operation.name", operation_name)
+                    span.set_attribute("function.name", func.__name__)
+                    
+                    start_time = time.time()
+                    try:
+                        result = func(*args, **kwargs)
+                        span.set_attribute("operation.success", True)
+                        return result
+                    except Exception as e:
+                        span.set_attribute("operation.success", False)
+                        span.set_attribute("error.message", str(e))
+                        raise
+                    finally:
+                        duration = time.time() - start_time
+                        query_duration_histogram.record(duration, {"operation": operation_name})
+            return wrapper
+        return decorator
+    
+    # Usage examples:
+    # @trace_business_operation("paper_retrieval")
+    # def retrieve_paper(paper_id):
+    #     paper_queries_counter.add(1, {"query_type": "retrieval"})
+    #     # ... business logic ...
+    #     successful_retrievals_counter.add(1)
+    
+    # @trace_business_operation("cache_operation")
+    # def cache_query_result(query, result):
+    #     cache_operations_counter.add(1, {"operation": "set"})
+    #     # ... cache logic ...
+---
+# Elasticsearch for Log Aggregation
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: observability
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: elasticsearch:8.11.0
+        ports:
+        - containerPort: 9200
+        - containerPort: 9300
+        env:
+        - name: discovery.type
+          value: single-node
+        - name: ES_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        - name: xpack.security.enabled
+          value: "false"
+        volumeMounts:
+        - name: elasticsearch-data
+          mountPath: /usr/share/elasticsearch/data
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: elasticsearch-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 20Gi
+---
+# Elasticsearch Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: observability
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+  - port: 9200
+    targetPort: 9200
+  type: ClusterIP
+---
+# Log Shipping with Fluent Bit
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+    spec:
+      serviceAccountName: fluent-bit
+      containers:
+      - name: fluent-bit
+        image: fluent/fluent-bit:2.2.0
+        ports:
+        - containerPort: 2020
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: fluent-bit-config
+        configMap:
+          name: fluent-bit-config
+---
+# Fluent Bit Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: observability
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+        Daemon        off
+        Parsers_File  parsers.conf
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_Port     2020
+    
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*metafunction*.log
+        Parser            docker
+        Tag               kube.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     50MB
+        Skip_Long_Lines   On
+    
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Merge_Log           On
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+    
+    [OUTPUT]
+        Name            es
+        Match           *
+        Host            elasticsearch.observability.svc.cluster.local
+        Port            9200
+        Index           metafunction-logs
+        Type            _doc
+        Logstash_Format On
+        Logstash_Prefix metafunction
+        Time_Key        @timestamp
+        Include_Tag_Key On
+        Tag_Key         tag
+  
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On

@@ -1,0 +1,204 @@
+# Default values for metafunction.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Application configuration
+app:
+  name: metafunction
+  version: "2.0.0"
+  
+image:
+  repository: metafunction
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: metafunction.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: metafunction-tls
+      hosts:
+        - metafunction.com
+
+# Resources
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Environment variables
+env:
+  FLASK_ENV: production
+  REDIS_URL: redis://metafunction-redis:6379
+  DATABASE_URL: postgresql://metafunction_user:password@metafunction-postgresql:5432/metafunction
+
+# Secrets
+secrets:
+  openaiApiKey: ""
+  deepseekApiKey: ""
+  perplexityApiKey: ""
+  databasePassword: ""
+
+# Health checks
+healthCheck:
+  enabled: true
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# PostgreSQL dependency configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "metafunction_postgres_123"
+    username: "metafunction_user"
+    password: "secure_password_123"
+    database: "metafunction"
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+    resources:
+      requests:
+        memory: 1Gi
+        cpu: 500m
+      limits:
+        memory: 2Gi
+        cpu: 1000m
+
+# Redis dependency configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 250m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+  grafana:
+    enabled: true
+    adminPassword: "admin123"
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /metrics
+
+# Logging configuration
+logging:
+  enabled: true
+  level: INFO
+  format: json
+
+# Backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: "7d"
+
+# Network Policies
+networkPolicies:
+  enabled: true
+  
+# Pod Security Policy
+podSecurityPolicy:
+  enabled: true
+
+# RBAC
+rbac:
+  create: true
+
+# Istio Service Mesh
+istio:
+  enabled: false
+  gateway:
+    enabled: false
+  virtualService:
+    enabled: false
+  destinationRule:
+    enabled: false
+
+# Kong API Gateway
+kong:
+  enabled: false

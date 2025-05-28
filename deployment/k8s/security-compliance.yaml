@@ -1,0 +1,620 @@
+# Security Hardening and Compliance Framework for MetaFunction
+# Comprehensive security policies for SOC2, GDPR, and enterprise compliance
+
+---
+# Security Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Pod Security Standards Policy
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: security-limits
+  namespace: metafunction
+spec:
+  limits:
+  - default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    type: Container
+  - max:
+      cpu: "2"
+      memory: "2Gi"
+    type: Container
+---
+# Security Context Constraints
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: metafunction-scc
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowedCapabilities: []
+defaultAddCapabilities: []
+fsGroup:
+  type: MustRunAs
+  ranges:
+  - max: 2000
+    min: 1000
+requiredDropCapabilities:
+- ALL
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: MustRunAs
+  seLinuxOptions:
+    level: "s0:c123,c456"
+users:
+- system:serviceaccount:metafunction:metafunction
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret
+---
+# Network Security Policy - Default Deny
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: metafunction
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# GDPR Data Protection Policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gdpr-compliance-config
+  namespace: security
+data:
+  gdpr-policy.yaml: |
+    data_protection:
+      # Data collection and processing guidelines
+      collection:
+        purpose_limitation: true
+        data_minimization: true
+        consent_required: true
+        
+      # Data subject rights
+      rights:
+        - access
+        - rectification
+        - erasure
+        - portability
+        - restriction
+        
+      # Technical measures
+      technical_measures:
+        encryption_at_rest: true
+        encryption_in_transit: true
+        pseudonymization: true
+        access_controls: true
+        
+      # Organizational measures
+      organizational_measures:
+        data_protection_officer: true
+        privacy_impact_assessment: true
+        data_breach_procedures: true
+        staff_training: true
+        
+      # Data retention
+      retention:
+        default_period: "7 years"
+        deletion_schedule: "quarterly"
+        anonymization: true
+        
+      # Cross-border transfers
+      transfers:
+        adequacy_decisions: true
+        standard_contractual_clauses: true
+        bcr_approval: false
+---
+# SOC2 Compliance Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soc2-compliance-config
+  namespace: security
+data:
+  soc2-controls.yaml: |
+    trust_principles:
+      security:
+        access_controls: true
+        logical_access: true
+        two_factor_auth: true
+        password_policy: true
+        
+      availability:
+        system_monitoring: true
+        incident_response: true
+        backup_procedures: true
+        disaster_recovery: true
+        
+      processing_integrity:
+        data_validation: true
+        error_handling: true
+        audit_trails: true
+        change_management: true
+        
+      confidentiality:
+        data_classification: true
+        encryption: true
+        secure_disposal: true
+        confidentiality_agreements: true
+        
+      privacy:
+        notice_practices: true
+        choice_consent: true
+        collection_limitation: true
+        use_retention: true
+---
+# Falco Security Rules for Runtime Protection
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-rules
+  namespace: security
+data:
+  falco_rules.yaml: |
+    - rule: Unexpected outbound connection
+      desc: Detect unexpected outbound connections
+      condition: >
+        outbound and not fd.typechar = 4 and not fd.num in (0, 1, 2) and not user_known_outbound_destination
+      output: >
+        Unexpected outbound connection (user=%user.name command=%proc.cmdline 
+        connection=%fd.name container_id=%container.id image=%container.image.repository)
+      priority: WARNING
+      
+    - rule: Sensitive file access
+      desc: Detect access to sensitive files
+      condition: >
+        open_read and (fd.name startswith /etc/passwd or fd.name startswith /etc/shadow or
+        fd.name startswith /etc/ssh/ or fd.name startswith /root/.ssh/)
+      output: >
+        Sensitive file access (user=%user.name command=%proc.cmdline file=%fd.name 
+        container_id=%container.id image=%container.image.repository)
+      priority: CRITICAL
+      
+    - rule: Privilege escalation attempt
+      desc: Detect privilege escalation attempts
+      condition: >
+        spawned_process and proc.name in (su, sudo, setuid) and not user.name = root
+      output: >
+        Privilege escalation attempt (user=%user.name command=%proc.cmdline 
+        container_id=%container.id image=%container.image.repository)
+      priority: CRITICAL
+---
+# Data Classification Labels
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-classification
+  namespace: security
+data:
+  classification.yaml: |
+    levels:
+      public:
+        description: "Information that can be freely shared"
+        handling: "No special restrictions"
+        retention: "As needed"
+        
+      internal:
+        description: "Information for internal use only"
+        handling: "Access controls required"
+        retention: "7 years"
+        
+      confidential:
+        description: "Sensitive business information"
+        handling: "Encryption required, limited access"
+        retention: "7 years, secure deletion"
+        
+      restricted:
+        description: "Highly sensitive information"
+        handling: "Strong encryption, audit logging, need-to-know basis"
+        retention: "As required by law, secure deletion"
+        
+    handling_procedures:
+      encryption:
+        at_rest: "AES-256"
+        in_transit: "TLS 1.3"
+        key_management: "AWS KMS"
+        
+      access_controls:
+        authentication: "Multi-factor required"
+        authorization: "Role-based access control"
+        audit_logging: "All access logged"
+---
+# Security Scanning with Trivy
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: security-scan
+  namespace: security
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: trivy-scanner
+            image: aquasec/trivy:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting security scan..."
+              
+              # Scan container images
+              trivy image --severity HIGH,CRITICAL metafunction:latest > /tmp/image-scan.txt
+              
+              # Scan filesystem
+              trivy fs --severity HIGH,CRITICAL /app > /tmp/fs-scan.txt
+              
+              # Scan Kubernetes configurations
+              trivy config --severity HIGH,CRITICAL /k8s > /tmp/config-scan.txt
+              
+              # Check for vulnerabilities
+              if grep -q "Total: [1-9]" /tmp/image-scan.txt; then
+                echo "CRITICAL: Vulnerabilities found in container image!"
+                cat /tmp/image-scan.txt
+                exit 1
+              fi
+              
+              echo "Security scan completed successfully"
+            volumeMounts:
+            - name: scan-results
+              mountPath: /tmp
+          volumes:
+          - name: scan-results
+            emptyDir: {}
+---
+# Compliance Audit Logging
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-policy
+  namespace: security
+data:
+  audit-policy.yaml: |
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    rules:
+    # Log all requests at the metadata level for compliance
+    - level: Metadata
+      namespaces: ["metafunction"]
+      resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+      
+    # Log sensitive operations
+    - level: RequestResponse
+      namespaces: ["metafunction"]
+      verbs: ["create", "update", "patch", "delete"]
+      resources:
+      - group: ""
+        resources: ["pods", "services"]
+      
+    # Log authentication events
+    - level: Request
+      users: ["system:anonymous"]
+      
+    # Log authorization failures
+    - level: Request
+      namespaces: ["metafunction"]
+      verbs: ["get", "list", "watch"]
+      resources:
+      - group: ""
+        resources: ["secrets"]
+---
+# Access Control Matrix
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: metafunction
+  name: compliance-auditor
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["servicemonitors", "prometheusrules"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: compliance-auditor-binding
+  namespace: metafunction
+subjects:
+- kind: User
+  name: compliance-auditor
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: compliance-auditor
+  apiGroup: rbac.authorization.k8s.io
+---
+# Privacy Impact Assessment Template
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: privacy-impact-assessment
+  namespace: security
+data:
+  pia-template.yaml: |
+    assessment:
+      project_name: "MetaFunction"
+      date: "2024-01-01"
+      assessor: "Data Protection Officer"
+      
+    data_flow:
+      collection:
+        - type: "User queries"
+          purpose: "Scientific research assistance"
+          legal_basis: "Legitimate interest"
+          
+      processing:
+        - activity: "Query analysis"
+          location: "EU/US"
+          retention: "7 years"
+          
+      sharing:
+        - recipient: "Third-party APIs"
+          purpose: "Research data retrieval"
+          safeguards: "Data processing agreements"
+          
+    risk_assessment:
+      high_risks:
+        - "Cross-border data transfers"
+        - "Automated decision making"
+        
+      mitigation:
+        - "Standard contractual clauses"
+        - "Human oversight implementation"
+        
+    compliance_measures:
+      technical:
+        - "End-to-end encryption"
+        - "Access logging"
+        - "Data anonymization"
+        
+      organizational:
+        - "Staff training"
+        - "Incident response procedures"
+        - "Regular audits"
+---
+# Incident Response Plan
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: incident-response-plan
+  namespace: security
+data:
+  incident-response.yaml: |
+    phases:
+      preparation:
+        - "Incident response team identified"
+        - "Contact information updated"
+        - "Response procedures documented"
+        
+      identification:
+        - "Security monitoring alerts"
+        - "User reports"
+        - "Third-party notifications"
+        
+      containment:
+        - "Isolate affected systems"
+        - "Preserve evidence"
+        - "Implement temporary fixes"
+        
+      eradication:
+        - "Remove malicious elements"
+        - "Patch vulnerabilities"
+        - "Update security controls"
+        
+      recovery:
+        - "Restore from clean backups"
+        - "Monitor for recurring issues"
+        - "Gradual service restoration"
+        
+      lessons_learned:
+        - "Post-incident review"
+        - "Update procedures"
+        - "Staff retraining"
+    
+    contact_information:
+      incident_commander: "security@company.com"
+      legal_counsel: "legal@company.com"
+      public_relations: "pr@company.com"
+      data_protection_officer: "dpo@company.com"
+    
+    notification_requirements:
+      data_breach:
+        supervisory_authority: "72 hours"
+        data_subjects: "Without undue delay"
+        
+      security_incident:
+        internal: "Immediate"
+        customers: "As appropriate"
+        regulators: "As required"
+---
+# Data Loss Prevention (DLP) Rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dlp-rules
+  namespace: security
+data:
+  dlp-config.yaml: |
+    rules:
+      credit_card:
+        pattern: '\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b'
+        action: "block"
+        severity: "high"
+        
+      social_security:
+        pattern: '\b\d{3}-\d{2}-\d{4}\b'
+        action: "block"
+        severity: "high"
+        
+      email_address:
+        pattern: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        action: "log"
+        severity: "medium"
+        
+      api_key:
+        pattern: 'sk-[a-zA-Z0-9]{48}'
+        action: "block"
+        severity: "critical"
+    
+    actions:
+      block:
+        - "Prevent data transmission"
+        - "Log incident"
+        - "Notify security team"
+        
+      log:
+        - "Record data access"
+        - "Monitor for patterns"
+        
+      encrypt:
+        - "Apply field-level encryption"
+        - "Log encryption event"
+---
+# Vulnerability Management
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vulnerability-scan
+  namespace: security
+spec:
+  schedule: "0 3 * * 1"  # Weekly on Monday at 3 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: vulnerability-scanner
+            image: aquasec/trivy:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting vulnerability assessment..."
+              
+              # Create vulnerability report
+              cat > /tmp/vuln-report.json << EOF
+              {
+                "scan_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "scan_type": "comprehensive",
+                "findings": []
+              }
+              EOF
+              
+              # Scan all container images
+              for image in $(kubectl get pods -n metafunction -o jsonpath='{.items[*].spec.containers[*].image}' | tr ' ' '\n' | sort -u); do
+                echo "Scanning image: $image"
+                trivy image --format json $image >> /tmp/vuln-results.json
+              done
+              
+              # Generate compliance report
+              echo "Generating compliance report..."
+              
+              CRITICAL_COUNT=$(cat /tmp/vuln-results.json | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length')
+              HIGH_COUNT=$(cat /tmp/vuln-results.json | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length')
+              
+              if [ $CRITICAL_COUNT -gt 0 ] || [ $HIGH_COUNT -gt 5 ]; then
+                echo "COMPLIANCE VIOLATION: Critical vulnerabilities found!"
+                echo "Critical: $CRITICAL_COUNT, High: $HIGH_COUNT"
+                exit 1
+              fi
+              
+              echo "Vulnerability scan completed - compliance maintained"
+---
+# Security Metrics Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-dashboard
+  namespace: security
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Security & Compliance Dashboard",
+        "panels": [
+          {
+            "title": "Vulnerability Counts",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "trivy_vulnerabilities_total{severity=\"CRITICAL\"}",
+                "legendFormat": "Critical"
+              },
+              {
+                "expr": "trivy_vulnerabilities_total{severity=\"HIGH\"}",
+                "legendFormat": "High"
+              }
+            ]
+          },
+          {
+            "title": "Compliance Score",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "(1 - (sum(trivy_vulnerabilities_total{severity=~\"CRITICAL|HIGH\"}) / 100)) * 100",
+                "legendFormat": "Compliance %"
+              }
+            ]
+          },
+          {
+            "title": "Security Events",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(falco_events_total[5m])",
+                "legendFormat": "{{ rule }}"
+              }
+            ]
+          },
+          {
+            "title": "Failed Authentication Attempts",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(authentication_attempts_total{result=\"failure\"}[5m])",
+                "legendFormat": "Failed Logins"
+              }
+            ]
+          }
+        ]
+      }
+    }

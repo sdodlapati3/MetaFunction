@@ -1,0 +1,59 @@
+name: Security Scan
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM
+  workflow_dispatch:
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install safety bandit semgrep
+      
+      - name: Run safety check for vulnerabilities
+        run: safety check --json --output safety-report.json
+        continue-on-error: true
+      
+      - name: Run bandit security analysis
+        run: bandit -r app/ resolvers/ -f json -o bandit-report.json
+        continue-on-error: true
+      
+      - name: Run Semgrep security scan
+        run: |
+          python -m semgrep --config=auto --json --output=semgrep-report.json app/ resolvers/
+        continue-on-error: true
+      
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-reports
+          path: |
+            safety-report.json
+            bandit-report.json
+            semgrep-report.json
+      
+      - name: Comment PR with security results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            // Add security scan results as PR comment
+            const fs = require('fs');
+            const safetyReport = JSON.parse(fs.readFileSync('safety-report.json', 'utf8'));
+            const comment = `## 🔒 Security Scan Results\n\n`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

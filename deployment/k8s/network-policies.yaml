@@ -1,0 +1,310 @@
+# Network Policies for MetaFunction security
+---
+# Default deny all ingress traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: metafunction
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# Allow MetaFunction app to communicate with external APIs
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metafunction-external-api
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: metafunction
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS to external APIs
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow HTTP for health checks and internal communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+---
+# Allow MetaFunction app to access database
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metafunction-to-database
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: metafunction
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres-primary
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres-replica
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+# Allow MetaFunction app to access Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metafunction-to-redis
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: metafunction
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+# Allow ingress traffic to MetaFunction app
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metafunction-ingress
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: metafunction
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow from Kong gateway
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kong
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow from Istio gateway
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+    ports:
+    - protocol: TCP
+      port: 8000
+  # Allow from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+# Allow database ingress only from MetaFunction
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-ingress
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-primary
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: metafunction
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from backup jobs
+  - from:
+    - podSelector:
+        matchLabels:
+          app: postgres-backup
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow from monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+# Allow Redis ingress only from MetaFunction
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: metafunction
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow from monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+# Allow monitoring to scrape metrics
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape
+  namespace: metafunction
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8080  # Metrics port
+    - protocol: TCP
+      port: 9090  # Prometheus port
+---
+# Allow logging collection
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-logging-collection
+  namespace: metafunction
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: logging
+    - podSelector:
+        matchLabels:
+          app: fluent-bit
+    ports:
+    - protocol: TCP
+      port: 24224  # Fluentd port
+---
+# Allow Vault communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-communication
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: vault
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: metafunction
+    ports:
+    - protocol: TCP
+      port: 8200
+  - from:
+    - podSelector:
+        matchLabels:
+          app: external-secrets
+    ports:
+    - protocol: TCP
+      port: 8200
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: consul
+    ports:
+    - protocol: TCP
+      port: 8500
+---
+# Allow Consul communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: consul-communication
+  namespace: metafunction
+spec:
+  podSelector:
+    matchLabels:
+      app: consul
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: vault
+    ports:
+    - protocol: TCP
+      port: 8500

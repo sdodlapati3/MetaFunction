@@ -1,0 +1,353 @@
+# Chaos Engineering with Chaos Monkey for MetaFunction
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chaos-engineering
+---
+# Chaos Monkey deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-monkey
+  namespace: chaos-engineering
+  labels:
+    app: chaos-monkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chaos-monkey
+  template:
+    metadata:
+      labels:
+        app: chaos-monkey
+    spec:
+      serviceAccountName: chaos-monkey
+      containers:
+      - name: chaos-monkey
+        image: quay.io/linki/chaoskube:v0.21.0
+        args:
+        - --interval=10m
+        - --dry-run=false
+        - --log-level=info
+        - --timezone=UTC
+        - --exclude-weekdays=Sat,Sun
+        - --exclude-times-of-day=22:00-08:00
+        - --exclude-days-of-year=Jan1,Dec25
+        - --annotation-selector=chaos.monkey/enabled=true
+        - --namespace-selector=name=metafunction
+        env:
+        - name: CHAOSKUBE_SLACK_WEBHOOK
+          valueFrom:
+            secretKeyRef:
+              name: chaos-monkey-config
+              key: slack-webhook
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+# Litmus Chaos Engine for advanced chaos experiments
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: metafunction-chaos
+  namespace: metafunction
+spec:
+  appinfo:
+    appns: metafunction
+    applabel: "app=metafunction"
+    appkind: "deployment"
+  chaosServiceAccount: chaos-monkey
+  experiments:
+  - name: pod-delete
+    spec:
+      components:
+        env:
+        - name: TOTAL_CHAOS_DURATION
+          value: "30"
+        - name: CHAOS_INTERVAL
+          value: "10"
+        - name: FORCE
+          value: "false"
+  - name: container-kill
+    spec:
+      components:
+        env:
+        - name: TARGET_CONTAINER
+          value: "metafunction"
+        - name: CHAOS_DURATION
+          value: "20"
+  - name: pod-cpu-hog
+    spec:
+      components:
+        env:
+        - name: TARGET_PODS
+          value: "1"
+        - name: CPU_CORES
+          value: "1"
+        - name: TOTAL_CHAOS_DURATION
+          value: "60"
+  - name: pod-memory-hog
+    spec:
+      components:
+        env:
+        - name: TARGET_PODS
+          value: "1"
+        - name: MEMORY_CONSUMPTION
+          value: "500"
+        - name: TOTAL_CHAOS_DURATION
+          value: "60"
+  - name: pod-network-latency
+    spec:
+      components:
+        env:
+        - name: TARGET_PODS
+          value: "1"
+        - name: NETWORK_LATENCY
+          value: "2000"
+        - name: TOTAL_CHAOS_DURATION
+          value: "60"
+---
+# Pod Disruption Experiment
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: custom-pod-failure
+  namespace: metafunction
+spec:
+  definition:
+    scope: Namespaced
+    permissions:
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["create", "delete", "get", "list", "patch", "update", "deletecollection"]
+    image: "litmuschaos/go-runner:2.14.0"
+    imagePullPolicy: Always
+    args:
+    - -c
+    - ./experiments -name pod-delete
+    command:
+    - /bin/bash
+    env:
+    - name: TOTAL_CHAOS_DURATION
+      value: "15"
+    - name: RAMP_TIME
+      value: ""
+    - name: FORCE
+      value: "true"
+    - name: CHAOS_INTERVAL
+      value: "5"
+    - name: PODS_AFFECTED_PERC
+      value: "25"
+    - name: TARGET_PODS
+      value: ""
+    - name: NODE_LABEL
+      value: ""
+    - name: SEQUENCE
+      value: "parallel"
+    labels:
+      name: custom-pod-failure
+      app.kubernetes.io/part-of: litmus
+      app.kubernetes.io/component: chaosexperiment
+      app.kubernetes.io/version: 2.14.0
+---
+# Chaos Scheduler for automated experiments
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chaos-scheduler
+  namespace: chaos-engineering
+spec:
+  schedule: "0 10 * * MON-FRI"  # Run at 10 AM on weekdays
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: chaos-monkey
+          containers:
+          - name: chaos-trigger
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Create a random chaos experiment
+              EXPERIMENTS=("pod-delete" "container-kill" "pod-cpu-hog" "pod-memory-hog")
+              RANDOM_EXP=${EXPERIMENTS[$RANDOM % ${#EXPERIMENTS[@]}]}
+              
+              kubectl apply -f - <<EOF
+              apiVersion: litmuschaos.io/v1alpha1
+              kind: ChaosEngine
+              metadata:
+                name: scheduled-chaos-$(date +%s)
+                namespace: metafunction
+              spec:
+                appinfo:
+                  appns: metafunction
+                  applabel: "app=metafunction"
+                  appkind: "deployment"
+                chaosServiceAccount: chaos-monkey
+                experiments:
+                - name: $RANDOM_EXP
+                  spec:
+                    components:
+                      env:
+                      - name: TOTAL_CHAOS_DURATION
+                        value: "30"
+              EOF
+          restartPolicy: OnFailure
+---
+# Service Account and RBAC for Chaos Monkey
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chaos-monkey
+  namespace: chaos-engineering
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chaos-monkey
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list", "delete", "get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list"]
+- apiGroups: ["litmuschaos.io"]
+  resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chaos-monkey
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chaos-monkey
+subjects:
+- kind: ServiceAccount
+  name: chaos-monkey
+  namespace: chaos-engineering
+---
+# Also create service account in metafunction namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chaos-monkey
+  namespace: metafunction
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chaos-monkey
+  namespace: metafunction
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chaos-monkey
+subjects:
+- kind: ServiceAccount
+  name: chaos-monkey
+  namespace: metafunction
+---
+# Chaos Monkey configuration secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chaos-monkey-config
+  namespace: chaos-engineering
+type: Opaque
+stringData:
+  slack-webhook: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+---
+# Grafana Dashboard for Chaos Monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-dashboard
+  namespace: chaos-engineering
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Chaos Engineering Dashboard",
+        "tags": ["chaos", "reliability"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Chaos Experiments",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "increase(chaos_experiments_total[24h])",
+                "legendFormat": "Total Experiments"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Pod Failures",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(kube_pod_container_status_restarts_total{namespace=\"metafunction\"}[5m])",
+                "legendFormat": "{{ pod }}"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Application Recovery Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"metafunction\"}[5m]))",
+                "legendFormat": "95th percentile"
+              }
+            ]
+          }
+        ]
+      }
+    }
+---
+# Alert rules for chaos experiments
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chaos-alerts
+  namespace: chaos-engineering
+spec:
+  groups:
+  - name: chaos.rules
+    rules:
+    - alert: ChaosExperimentRunning
+      expr: chaos_experiment_status == 1
+      for: 0m
+      labels:
+        severity: info
+      annotations:
+        summary: "Chaos experiment is running"
+        description: "Chaos experiment {{ $labels.experiment }} is currently running in namespace {{ $labels.namespace }}"
+    
+    - alert: ApplicationNotRecovering
+      expr: up{job="metafunction"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Application not recovering from chaos"
+        description: "MetaFunction application has been down for more than 5 minutes during or after chaos experiment"

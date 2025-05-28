@@ -1,0 +1,116 @@
+# Kubernetes deployment configuration for MetaFunction
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metafunction
+  namespace: metafunction
+  labels:
+    app: metafunction
+    version: v2.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: metafunction
+  template:
+    metadata:
+      labels:
+        app: metafunction
+    spec:
+      containers:
+      - name: metafunction
+        image: metafunction:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: FLASK_ENV
+          value: "production"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: metafunction-secrets
+              key: openai-api-key
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: metafunction-secrets
+              key: deepseek-api-key
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: logs-volume
+          mountPath: /app/logs
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: logs-volume
+        emptyDir: {}
+      imagePullSecrets:
+      - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metafunction-service
+  namespace: metafunction
+spec:
+  selector:
+    app: metafunction
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: metafunction-ingress
+  namespace: metafunction
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - metafunction.com
+    secretName: metafunction-tls
+  rules:
+  - host: metafunction.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: metafunction-service
+            port:
+              number: 80

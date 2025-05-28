@@ -1,0 +1,545 @@
+# Disaster Recovery and Backup Strategies for MetaFunction
+# Comprehensive backup solution with Velero, database backups, and cross-region replication
+
+---
+# Velero Installation for Kubernetes Backup
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    app.kubernetes.io/name: velero
+---
+# Velero Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero
+  namespace: velero
+---
+# Velero RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: velero
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: velero
+  namespace: velero
+---
+# AWS Credentials Secret for Velero
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-credentials
+  namespace: velero
+type: Opaque
+data:
+  cloud: |
+    W2RlZmF1bHRdCmF3c19hY2Nlc3Nfa2V5X2lkID0gWU9VUl9BV1NfQUNDRVNTX0tFWV9JRAphd3Nfc2VjcmV0X2FjY2Vzc19rZXkgPSBZT1VSX0FXU19TRUNSRVRfQUNDRVNTX0tFWQ==
+---
+# Velero BackupStorageLocation
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: default
+  namespace: velero
+spec:
+  provider: aws
+  objectStorage:
+    bucket: metafunction-backup-bucket
+    prefix: velero-backups
+  config:
+    region: us-west-2
+    s3ForcePathStyle: "false"
+---
+# Velero VolumeSnapshotLocation
+apiVersion: velero.io/v1
+kind: VolumeSnapshotLocation
+metadata:
+  name: default
+  namespace: velero
+spec:
+  provider: aws
+  config:
+    region: us-west-2
+---
+# Daily Backup Schedule
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-backup
+  namespace: velero
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  template:
+    includedNamespaces:
+    - metafunction
+    - monitoring
+    - cert-manager
+    - ingress-nginx
+    excludedResources:
+    - events
+    - events.events.k8s.io
+    - backups.velero.io
+    - restores.velero.io
+    - resticrepositories.velero.io
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+    ttl: 720h0m0s  # 30 days retention
+    includeClusterResources: true
+    hooks:
+      resources:
+      - name: postgres-backup-hook
+        includedNamespaces:
+        - metafunction
+        labelSelector:
+          matchLabels:
+            app: postgres
+        pre:
+        - exec:
+            container: postgres
+            command:
+            - /bin/bash
+            - -c
+            - "pg_dump -U metafunction metafunction > /tmp/backup.sql"
+        post:
+        - exec:
+            container: postgres
+            command:
+            - /bin/bash
+            - -c
+            - "rm -f /tmp/backup.sql"
+---
+# Weekly Full Backup Schedule
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-full-backup
+  namespace: velero
+spec:
+  schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+  template:
+    includedNamespaces:
+    - metafunction
+    - monitoring
+    - cert-manager
+    - ingress-nginx
+    - kube-system
+    - velero
+    storageLocation: default
+    volumeSnapshotLocations:
+    - default
+    ttl: 8760h0m0s  # 1 year retention
+    includeClusterResources: true
+---
+# Database Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: metafunction
+spec:
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: postgres-backup
+            image: postgres:15
+            env:
+            - name: PGHOST
+              value: "postgres"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "metafunction"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: secret-access-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              BACKUP_FILE="metafunction_$(date +%Y%m%d_%H%M%S).sql"
+              echo "Creating database backup: $BACKUP_FILE"
+              
+              # Create backup
+              pg_dump -h $PGHOST -p $PGPORT -U $PGUSER metafunction > /tmp/$BACKUP_FILE
+              
+              # Compress backup
+              gzip /tmp/$BACKUP_FILE
+              
+              # Upload to S3 using aws cli
+              apt-get update && apt-get install -y awscli
+              aws s3 cp /tmp/${BACKUP_FILE}.gz s3://metafunction-backup-bucket/database-backups/
+              
+              # Cleanup local file
+              rm -f /tmp/${BACKUP_FILE}.gz
+              
+              echo "Backup completed and uploaded to S3"
+              
+              # Cleanup old backups (keep 30 days)
+              aws s3 ls s3://metafunction-backup-bucket/database-backups/ --recursive | \
+                while read -r line; do
+                  createDate=$(echo $line | awk '{print $1" "$2}')
+                  createDate=$(date -d "$createDate" +%s)
+                  olderThan=$(date -d "30 days ago" +%s)
+                  if [[ $createDate -lt $olderThan ]]; then
+                    fileName=$(echo $line | awk '{print $4}')
+                    aws s3 rm s3://metafunction-backup-bucket/database-backups/$fileName
+                    echo "Deleted old backup: $fileName"
+                  fi
+                done
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /tmp
+          volumes:
+          - name: backup-storage
+            emptyDir: {}
+---
+# Redis Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+  namespace: metafunction
+spec:
+  schedule: "0 4 * * *"  # Daily at 4 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: redis-backup
+            image: redis:7-alpine
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backup-s3-credentials
+                  key: secret-access-key
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              apk add --no-cache aws-cli
+              
+              BACKUP_FILE="redis_$(date +%Y%m%d_%H%M%S).rdb"
+              echo "Creating Redis backup: $BACKUP_FILE"
+              
+              # Create Redis backup
+              redis-cli -h redis BGSAVE
+              
+              # Wait for backup to complete
+              while [ $(redis-cli -h redis LASTSAVE) -eq $(redis-cli -h redis LASTSAVE) ]; do
+                sleep 1
+              done
+              
+              # Copy backup file
+              redis-cli -h redis --rdb /tmp/$BACKUP_FILE
+              
+              # Upload to S3
+              aws s3 cp /tmp/$BACKUP_FILE s3://metafunction-backup-bucket/redis-backups/
+              
+              echo "Redis backup completed and uploaded to S3"
+---
+# S3 Credentials Secret for Backups
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-s3-credentials
+  namespace: metafunction
+type: Opaque
+data:
+  access-key-id: WU9VUl9BV1NfQUNDRVNTX0tFWV9JRA==  # Base64 encoded
+  secret-access-key: WU9VUl9BV1NfU0VDUkVUX0FDQ0VTU19LRVk=  # Base64 encoded
+---
+# Backup Verification Job
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verification
+  namespace: velero
+spec:
+  schedule: "0 6 * * 1"  # Weekly on Monday at 6 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: velero
+          restartPolicy: OnFailure
+          containers:
+          - name: backup-verifier
+            image: velero/velero:v1.12.0
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting backup verification..."
+              
+              # List recent backups
+              velero backup get --output json > /tmp/backups.json
+              
+              # Check if backups are completing successfully
+              FAILED_BACKUPS=$(cat /tmp/backups.json | jq -r '.items[] | select(.status.phase == "Failed") | .metadata.name' | wc -l)
+              
+              if [ $FAILED_BACKUPS -gt 0 ]; then
+                echo "ERROR: $FAILED_BACKUPS failed backups found!"
+                cat /tmp/backups.json | jq -r '.items[] | select(.status.phase == "Failed") | .metadata.name'
+                exit 1
+              fi
+              
+              # Verify latest backup
+              LATEST_BACKUP=$(cat /tmp/backups.json | jq -r '.items | sort_by(.metadata.creationTimestamp) | reverse | .[0].metadata.name')
+              echo "Verifying latest backup: $LATEST_BACKUP"
+              
+              velero backup describe $LATEST_BACKUP --details
+              
+              echo "Backup verification completed successfully"
+---
+# Cross-Region Replication for S3 Backup Bucket
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-replication-config
+  namespace: velero
+data:
+  replication.json: |
+    {
+      "Role": "arn:aws:iam::ACCOUNT-ID:role/replication-role",
+      "Rules": [
+        {
+          "ID": "ReplicateEverything",
+          "Status": "Enabled",
+          "Prefix": "",
+          "Destination": {
+            "Bucket": "arn:aws:s3:::metafunction-backup-bucket-replica",
+            "StorageClass": "STANDARD_IA"
+          }
+        }
+      ]
+    }
+---
+# Disaster Recovery Runbook ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disaster-recovery-runbook
+  namespace: velero
+data:
+  runbook.md: |
+    # MetaFunction Disaster Recovery Runbook
+    
+    ## Recovery Scenarios
+    
+    ### 1. Complete Cluster Loss
+    ```bash
+    # Create new cluster
+    # Install Velero
+    velero install --provider aws --plugins velero/velero-plugin-for-aws:v1.8.0 \
+      --bucket metafunction-backup-bucket --secret-file ./credentials-velero \
+      --backup-location-config region=us-west-2
+    
+    # Restore latest backup
+    velero restore create --from-backup $(velero backup get | grep daily | head -1 | awk '{print $1}')
+    ```
+    
+    ### 2. Database Corruption
+    ```bash
+    # Scale down application
+    kubectl scale deployment metafunction --replicas=0
+    
+    # Download latest database backup
+    aws s3 cp s3://metafunction-backup-bucket/database-backups/$(aws s3 ls s3://metafunction-backup-bucket/database-backups/ | sort | tail -1 | awk '{print $4}') /tmp/
+    
+    # Restore database
+    gunzip /tmp/metafunction_*.sql.gz
+    kubectl exec -it postgres-0 -- psql -U metafunction -d metafunction -f /tmp/metafunction_*.sql
+    
+    # Scale up application
+    kubectl scale deployment metafunction --replicas=3
+    ```
+    
+    ### 3. Regional Outage
+    ```bash
+    # Switch to backup region
+    # Update DNS to point to backup region
+    # Restore from cross-region replicated backups
+    ```
+    
+    ## RTO/RPO Targets
+    - **RTO (Recovery Time Objective)**: 4 hours
+    - **RPO (Recovery Point Objective)**: 1 hour
+    
+    ## Contact Information
+    - On-call Engineer: +1-555-0123
+    - Incident Channel: #metafunction-incidents
+    - Escalation: engineering-leads@company.com
+---
+# Disaster Recovery Test Schedule
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dr-test
+  namespace: velero
+spec:
+  schedule: "0 9 1 * *"  # Monthly on 1st at 9 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: velero
+          restartPolicy: OnFailure
+          containers:
+          - name: dr-tester
+            image: velero/velero:v1.12.0
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Starting disaster recovery test..."
+              
+              # Create test namespace
+              kubectl create namespace dr-test-$(date +%s) || true
+              
+              # Perform restore to test namespace
+              LATEST_BACKUP=$(velero backup get --output json | jq -r '.items | sort_by(.metadata.creationTimestamp) | reverse | .[0].metadata.name')
+              
+              velero restore create dr-test-restore-$(date +%s) \
+                --from-backup $LATEST_BACKUP \
+                --namespace-mappings metafunction:dr-test-$(date +%s)
+              
+              # Wait for restore to complete
+              sleep 300
+              
+              # Verify restore
+              kubectl get pods -n dr-test-$(date +%s)
+              
+              # Cleanup test namespace
+              kubectl delete namespace dr-test-$(date +%s)
+              
+              echo "Disaster recovery test completed successfully"
+---
+# Backup Monitoring and Alerting
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backup-monitoring
+  namespace: velero
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+  endpoints:
+  - port: monitoring
+    path: /metrics
+---
+# PrometheusRule for Backup Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup-alerts
+  namespace: velero
+spec:
+  groups:
+  - name: backup.rules
+    rules:
+    - alert: BackupFailed
+      expr: increase(velero_backup_failure_total[1h]) > 0
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Velero backup failed"
+        description: "A Velero backup has failed in the last hour"
+    
+    - alert: BackupMissing
+      expr: time() - velero_backup_last_successful_timestamp > 86400
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "No successful backup in 24 hours"
+        description: "No successful Velero backup has been completed in the last 24 hours"
+    
+    - alert: DatabaseBackupFailed
+      expr: increase(kube_job_failed{job_name=~"postgres-backup.*"}[1h]) > 0
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Database backup failed"
+        description: "PostgreSQL backup job has failed"
+    
+    - alert: BackupStorageFull
+      expr: kubelet_volume_stats_used_bytes{persistentvolumeclaim="velero-storage"} / kubelet_volume_stats_capacity_bytes{persistentvolumeclaim="velero-storage"} > 0.85
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Backup storage almost full"
+        description: "Backup storage is {{ $value | humanizePercentage }} full"
+---
+# Backup Retention Policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-retention-policy
+  namespace: velero
+data:
+  policy.yaml: |
+    retention:
+      daily_backups: 30    # Keep 30 daily backups
+      weekly_backups: 12   # Keep 12 weekly backups
+      monthly_backups: 12  # Keep 12 monthly backups
+      yearly_backups: 7    # Keep 7 yearly backups
+    
+    cleanup_schedule: "0 5 * * *"  # Run cleanup daily at 5 AM
+---
+# Multi-Region Backup Strategy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-region-backup
+  namespace: velero
+data:
+  regions.yaml: |
+    primary_region: us-west-2
+    backup_regions:
+      - us-east-1
+      - eu-west-1
+    
+    replication_strategy:
+      sync: true
+      encryption: true
+      storage_class: STANDARD_IA

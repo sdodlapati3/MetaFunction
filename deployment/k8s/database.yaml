@@ -1,0 +1,512 @@
+# Production PostgreSQL database with high availability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: metafunction
+data:
+  postgresql.conf: |
+    # Connection settings
+    listen_addresses = '*'
+    port = 5432
+    max_connections = 200
+    
+    # Memory settings
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    work_mem = 4MB
+    maintenance_work_mem = 64MB
+    
+    # WAL settings
+    wal_level = replica
+    max_wal_senders = 3
+    archive_mode = on
+    archive_command = 'cp %p /var/lib/postgresql/archive/%f'
+    
+    # Checkpoint settings
+    checkpoint_completion_target = 0.7
+    wal_buffers = 16MB
+    
+    # Query planner
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d.log'
+    log_statement = 'all'
+    log_min_duration_statement = 1000
+    
+    # Performance monitoring
+    shared_preload_libraries = 'pg_stat_statements'
+    pg_stat_statements.track = all
+
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            md5
+    host    all             all             ::1/128                 md5
+    host    all             all             0.0.0.0/0               md5
+    host    replication     replicator      0.0.0.0/0               md5
+
+  init.sql: |
+    -- Create MetaFunction database and user
+    CREATE DATABASE metafunction;
+    CREATE USER metafunction_user WITH ENCRYPTED PASSWORD 'secure_password_123';
+    GRANT ALL PRIVILEGES ON DATABASE metafunction TO metafunction_user;
+    
+    \c metafunction;
+    
+    -- Grant schema permissions
+    GRANT ALL ON SCHEMA public TO metafunction_user;
+    
+    -- Create tables for MetaFunction
+    CREATE TABLE IF NOT EXISTS papers (
+        id SERIAL PRIMARY KEY,
+        doi VARCHAR(255) UNIQUE,
+        pmid VARCHAR(50) UNIQUE,
+        title TEXT NOT NULL,
+        authors TEXT,
+        journal VARCHAR(255),
+        year INTEGER,
+        abstract TEXT,
+        content TEXT,
+        pdf_url VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        paper_id INTEGER REFERENCES papers(id),
+        model VARCHAR(100),
+        user_query TEXT,
+        ai_response TEXT,
+        response_time_ms INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        metadata JSONB
+    );
+    
+    CREATE TABLE IF NOT EXISTS paper_metadata (
+        id SERIAL PRIMARY KEY,
+        paper_id INTEGER REFERENCES papers(id),
+        treatments TEXT[],
+        datasets TEXT[],
+        methodologies TEXT[],
+        findings TEXT[],
+        keywords TEXT[],
+        citations_count INTEGER DEFAULT 0,
+        impact_factor DECIMAL(5,3),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS analytics (
+        id SERIAL PRIMARY KEY,
+        event_type VARCHAR(100),
+        event_data JSONB,
+        user_session VARCHAR(255),
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS api_usage (
+        id SERIAL PRIMARY KEY,
+        endpoint VARCHAR(255),
+        method VARCHAR(10),
+        status_code INTEGER,
+        response_time_ms INTEGER,
+        user_agent TEXT,
+        ip_address INET,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Create indexes for performance
+    CREATE INDEX idx_papers_doi ON papers(doi);
+    CREATE INDEX idx_papers_pmid ON papers(pmid);
+    CREATE INDEX idx_papers_year ON papers(year);
+    CREATE INDEX idx_chat_sessions_session_id ON chat_sessions(session_id);
+    CREATE INDEX idx_chat_sessions_created_at ON chat_sessions(created_at);
+    CREATE INDEX idx_analytics_event_type ON analytics(event_type);
+    CREATE INDEX idx_analytics_timestamp ON analytics(timestamp);
+    CREATE INDEX idx_api_usage_endpoint ON api_usage(endpoint);
+    CREATE INDEX idx_api_usage_timestamp ON api_usage(timestamp);
+    
+    -- Create materialized view for analytics dashboard
+    CREATE MATERIALIZED VIEW analytics_summary AS
+    SELECT 
+        date_trunc('hour', timestamp) as hour,
+        event_type,
+        COUNT(*) as event_count
+    FROM analytics 
+    GROUP BY date_trunc('hour', timestamp), event_type;
+    
+    CREATE INDEX idx_analytics_summary_hour ON analytics_summary(hour);
+    
+    -- Create function to refresh analytics summary
+    CREATE OR REPLACE FUNCTION refresh_analytics_summary()
+    RETURNS void AS $$
+    BEGIN
+        REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_summary;
+    END;
+    $$ LANGUAGE plpgsql;
+    
+    -- Grant permissions on all tables to metafunction_user
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO metafunction_user;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO metafunction_user;
+    GRANT EXECUTE ON FUNCTION refresh_analytics_summary() TO metafunction_user;
+---
+# PostgreSQL Primary (Master)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: metafunction
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-primary
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: postgres-primary
+        role: primary
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: metafunction
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: POSTGRES_REPLICATION_USER
+          value: replicator
+        - name: POSTGRES_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: replication-password
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        - name: postgres-config
+          mountPath: /etc/postgresql/pg_hba.conf
+          subPath: pg_hba.conf
+        - name: postgres-config
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: init.sql
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+# PostgreSQL Read Replica
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+  namespace: metafunction
+spec:
+  serviceName: postgres-replica
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres-replica
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: postgres-replica
+        role: replica
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: PGUSER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: POSTGRES_MASTER_SERVICE
+          value: postgres-primary
+        - name: POSTGRES_REPLICATION_USER
+          value: replicator
+        - name: POSTGRES_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: replication-password
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Setup streaming replication
+          if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+            pg_basebackup -h $POSTGRES_MASTER_SERVICE -D /var/lib/postgresql/data -U $POSTGRES_REPLICATION_USER -W -v -R
+          fi
+          postgres -D /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: postgres-replica-data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-replica-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+# PostgreSQL Primary Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: metafunction
+spec:
+  selector:
+    app: postgres-primary
+    role: primary
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+# PostgreSQL Read-Only Service (for read replicas)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-readonly
+  namespace: metafunction
+spec:
+  selector:
+    app: postgres-replica
+    role: replica
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+# PostgreSQL Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: metafunction
+type: Opaque
+data:
+  postgres-password: bWV0YWZ1bmN0aW9uX3Bvc3RncmVzXzEyMw==  # metafunction_postgres_123
+  replication-password: cmVwbGljYXRvcl9wYXNzd29yZF8xMjM=  # replicator_password_123
+---
+# PgAdmin for database management
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgadmin
+  namespace: metafunction
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgadmin
+  template:
+    metadata:
+      labels:
+        app: pgadmin
+    spec:
+      containers:
+      - name: pgadmin
+        image: dpage/pgadmin4:6.18
+        ports:
+        - containerPort: 80
+        env:
+        - name: PGADMIN_DEFAULT_EMAIL
+          value: admin@metafunction.com
+        - name: PGADMIN_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pgadmin-secret
+              key: password
+        - name: PGADMIN_CONFIG_SERVER_MODE
+          value: "True"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: pgadmin-data
+          mountPath: /var/lib/pgadmin
+      volumes:
+      - name: pgadmin-data
+        persistentVolumeClaim:
+          claimName: pgadmin-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgadmin
+  namespace: metafunction
+spec:
+  selector:
+    app: pgadmin
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgadmin-pvc
+  namespace: metafunction
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgadmin-secret
+  namespace: metafunction
+type: Opaque
+data:
+  password: YWRtaW5fcGFzc3dvcmRfMTIz  # admin_password_123
+---
+# Database backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: metafunction
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: postgres-backup
+            image: postgres:15-alpine
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: postgres-password
+            command:
+            - /bin/sh
+            - -c
+            - |
+              DATE=$(date +%Y%m%d_%H%M%S)
+              pg_dump -h postgres-primary -U postgres -d metafunction > /backup/metafunction_backup_$DATE.sql
+              
+              # Keep only last 7 days of backups
+              find /backup -name "metafunction_backup_*.sql" -mtime +7 -delete
+              
+              echo "Backup completed: metafunction_backup_$DATE.sql"
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup-pvc
+  namespace: metafunction
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi

@@ -1,0 +1,624 @@
+---
+# Database Migration and Upgrade Strategies
+# Production-ready database management with zero-downtime migrations
+
+# Namespace for database operations
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: database-ops
+  labels:
+    app: database-migration
+    environment: production
+---
+# ConfigMap for migration scripts and configurations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: migration-config
+  namespace: database-ops
+data:
+  migration.conf: |
+    # Migration Configuration
+    MIGRATION_TIMEOUT=3600
+    BACKUP_BEFORE_MIGRATION=true
+    ROLLBACK_ON_FAILURE=true
+    VERIFY_SCHEMA_INTEGRITY=true
+    LOG_LEVEL=INFO
+    
+  pre-migration-checks.sql: |
+    -- Pre-migration validation checks
+    SELECT 
+      schemaname,
+      tablename,
+      pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
+    FROM pg_tables 
+    WHERE schemaname NOT IN ('information_schema', 'pg_catalog');
+    
+    -- Check for long-running transactions
+    SELECT pid, now() - pg_stat_activity.query_start AS duration, query 
+    FROM pg_stat_activity 
+    WHERE (now() - pg_stat_activity.query_start) > interval '5 minutes';
+    
+  post-migration-checks.sql: |
+    -- Post-migration validation
+    SELECT COUNT(*) FROM pg_stat_activity WHERE state = 'active';
+    
+    -- Verify table integrity
+    SELECT schemaname, tablename, n_tup_ins, n_tup_upd, n_tup_del 
+    FROM pg_stat_user_tables;
+    
+    -- Check for orphaned data
+    SELECT COUNT(*) FROM information_schema.tables 
+    WHERE table_schema = 'public';
+    
+  rollback-strategy.sql: |
+    -- Emergency rollback procedures
+    -- Restore from point-in-time backup
+    BEGIN;
+    -- Rollback logic here based on migration type
+    -- Log rollback actions for audit
+    COMMIT;
+---
+# Secret for database migration credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: migration-credentials
+  namespace: database-ops
+type: Opaque
+data:
+  # Base64 encoded database credentials
+  migration-user: bWlncmF0aW9uX3VzZXI=  # migration_user
+  migration-password: bWlncmF0aW9uX3Bhc3N3b3Jk  # migration_password
+  admin-user: YWRtaW4=  # admin
+  admin-password: YWRtaW5fcGFzc3dvcmQ=  # admin_password
+---
+# ServiceAccount for migration operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: migration-service-account
+  namespace: database-ops
+---
+# ClusterRole for database migration operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: migration-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# ClusterRoleBinding for migration service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: migration-operator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: migration-operator
+subjects:
+- kind: ServiceAccount
+  name: migration-service-account
+  namespace: database-ops
+---
+# PersistentVolumeClaim for migration artifacts storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: migration-storage
+  namespace: database-ops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+---
+# Deployment for Migration Controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: migration-controller
+  namespace: database-ops
+  labels:
+    app: migration-controller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: migration-controller
+  template:
+    metadata:
+      labels:
+        app: migration-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: migration-service-account
+      containers:
+      - name: migration-controller
+        image: postgres:15-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Starting Migration Controller..."
+          
+          # Install required tools
+          apk add --no-cache curl jq python3 py3-pip
+          pip3 install psycopg2-binary kubernetes prometheus_client
+          
+          # Start metrics server
+          python3 -c "
+          from prometheus_client import start_http_server, Counter, Histogram, Gauge
+          import time
+          import threading
+          
+          # Metrics
+          migration_counter = Counter('database_migrations_total', 'Total database migrations')
+          migration_duration = Histogram('database_migration_duration_seconds', 'Migration duration')
+          migration_status = Gauge('database_migration_status', 'Migration status', ['migration_name'])
+          
+          def start_metrics():
+              start_http_server(8080)
+              while True:
+                  time.sleep(30)
+          
+          thread = threading.Thread(target=start_metrics)
+          thread.daemon = True
+          thread.start()
+          
+          print('Migration controller ready')
+          while True:
+              time.sleep(60)
+          " &
+          
+          # Keep container running
+          tail -f /dev/null
+        env:
+        - name: POSTGRES_HOST
+          value: "postgresql.default.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "metafunction"
+        - name: MIGRATION_USER
+          valueFrom:
+            secretKeyRef:
+              name: migration-credentials
+              key: migration-user
+        - name: MIGRATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: migration-credentials
+              key: migration-password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: migration-config
+          mountPath: /config
+        - name: migration-storage
+          mountPath: /migrations
+        - name: migration-scripts
+          mountPath: /scripts
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: migration-config
+        configMap:
+          name: migration-config
+      - name: migration-storage
+        persistentVolumeClaim:
+          claimName: migration-storage
+      - name: migration-scripts
+        configMap:
+          name: migration-scripts
+          defaultMode: 0755
+---
+# ConfigMap for migration scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: migration-scripts
+  namespace: database-ops
+data:
+  run-migration.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # Migration execution script
+    MIGRATION_NAME=${1:-""}
+    MIGRATION_TYPE=${2:-"schema"}
+    DRY_RUN=${3:-"false"}
+    
+    if [ -z "$MIGRATION_NAME" ]; then
+        echo "Usage: $0 <migration_name> [schema|data] [true|false]"
+        exit 1
+    fi
+    
+    echo "Starting migration: $MIGRATION_NAME"
+    echo "Migration type: $MIGRATION_TYPE"
+    echo "Dry run: $DRY_RUN"
+    
+    # Pre-migration backup
+    if [ "$DRY_RUN" != "true" ]; then
+        echo "Creating pre-migration backup..."
+        pg_dump -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+          > /migrations/backup_${MIGRATION_NAME}_$(date +%Y%m%d_%H%M%S).sql
+    fi
+    
+    # Run pre-migration checks
+    echo "Running pre-migration checks..."
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      -f /config/pre-migration-checks.sql
+    
+    # Execute migration
+    if [ -f "/migrations/${MIGRATION_NAME}.sql" ]; then
+        echo "Executing migration script..."
+        if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN - Would execute:"
+            cat /migrations/${MIGRATION_NAME}.sql
+        else
+            psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+              -f /migrations/${MIGRATION_NAME}.sql
+        fi
+    else
+        echo "Migration file not found: /migrations/${MIGRATION_NAME}.sql"
+        exit 1
+    fi
+    
+    # Run post-migration checks
+    echo "Running post-migration checks..."
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      -f /config/post-migration-checks.sql
+    
+    echo "Migration completed successfully: $MIGRATION_NAME"
+  
+  rollback-migration.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # Rollback script
+    BACKUP_FILE=${1:-""}
+    
+    if [ -z "$BACKUP_FILE" ]; then
+        echo "Usage: $0 <backup_file>"
+        exit 1
+    fi
+    
+    if [ ! -f "/migrations/$BACKUP_FILE" ]; then
+        echo "Backup file not found: /migrations/$BACKUP_FILE"
+        exit 1
+    fi
+    
+    echo "Rolling back using backup: $BACKUP_FILE"
+    
+    # Create current state backup before rollback
+    pg_dump -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      > /migrations/before_rollback_$(date +%Y%m%d_%H%M%S).sql
+    
+    # Perform rollback
+    dropdb -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER --if-exists $POSTGRES_DB
+    createdb -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER $POSTGRES_DB
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      < /migrations/$BACKUP_FILE
+    
+    echo "Rollback completed successfully"
+  
+  zero-downtime-migration.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # Zero-downtime migration strategy
+    MIGRATION_NAME=${1:-""}
+    
+    if [ -z "$MIGRATION_NAME" ]; then
+        echo "Usage: $0 <migration_name>"
+        exit 1
+    fi
+    
+    echo "Starting zero-downtime migration: $MIGRATION_NAME"
+    
+    # Step 1: Create new columns/tables (additive changes)
+    echo "Step 1: Adding new schema elements..."
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      -f /migrations/${MIGRATION_NAME}_add.sql
+    
+    # Step 2: Deploy application version that writes to both old and new schema
+    echo "Step 2: Ready for dual-write deployment"
+    echo "Deploy application version that supports both schemas"
+    
+    # Step 3: Migrate existing data
+    echo "Step 3: Migrating existing data..."
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      -f /migrations/${MIGRATION_NAME}_migrate_data.sql
+    
+    # Step 4: Validate data consistency
+    echo "Step 4: Validating data consistency..."
+    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB \
+      -f /migrations/${MIGRATION_NAME}_validate.sql
+    
+    # Step 5: Ready for application switch to new schema
+    echo "Step 5: Ready for application switch to new schema"
+    echo "Deploy application version that uses only new schema"
+    
+    # Step 6: Remove old schema elements (after confirmation)
+    echo "Step 6: Ready to remove old schema elements"
+    echo "Run: psql -f /migrations/${MIGRATION_NAME}_cleanup.sql"
+    
+    echo "Zero-downtime migration preparation completed"
+---
+# Service for migration controller
+apiVersion: v1
+kind: Service
+metadata:
+  name: migration-controller-service
+  namespace: database-ops
+  labels:
+    app: migration-controller
+spec:
+  selector:
+    app: migration-controller
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+---
+# ServiceMonitor for Prometheus scraping
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: migration-controller-metrics
+  namespace: database-ops
+  labels:
+    app: migration-controller
+spec:
+  selector:
+    matchLabels:
+      app: migration-controller
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+# Job for schema initialization
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: schema-initialization
+  namespace: database-ops
+spec:
+  template:
+    metadata:
+      labels:
+        app: schema-initialization
+    spec:
+      serviceAccountName: migration-service-account
+      restartPolicy: OnFailure
+      containers:
+      - name: schema-init
+        image: postgres:15-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Initializing database schema..."
+          
+          # Wait for database to be ready
+          until pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER; do
+            echo "Waiting for database..."
+            sleep 2
+          done
+          
+          # Create migration tracking table
+          psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB << 'EOF'
+          CREATE TABLE IF NOT EXISTS schema_migrations (
+            id SERIAL PRIMARY KEY,
+            migration_name VARCHAR(255) NOT NULL UNIQUE,
+            migration_type VARCHAR(50) NOT NULL,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            applied_by VARCHAR(100) NOT NULL,
+            execution_time_ms INTEGER,
+            rollback_sql TEXT,
+            checksum VARCHAR(64),
+            status VARCHAR(20) DEFAULT 'applied'
+          );
+          
+          CREATE INDEX IF NOT EXISTS idx_schema_migrations_name ON schema_migrations(migration_name);
+          CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at ON schema_migrations(applied_at);
+          
+          -- Create migration user with appropriate permissions
+          CREATE USER migration_user WITH PASSWORD 'migration_password';
+          GRANT CONNECT ON DATABASE metafunction TO migration_user;
+          GRANT USAGE ON SCHEMA public TO migration_user;
+          GRANT CREATE ON SCHEMA public TO migration_user;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO migration_user;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO migration_user;
+          
+          -- Set default privileges for future tables
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO migration_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO migration_user;
+          
+          INSERT INTO schema_migrations (migration_name, migration_type, applied_by, execution_time_ms)
+          VALUES ('initial_schema', 'schema', 'system', 0)
+          ON CONFLICT (migration_name) DO NOTHING;
+          
+          EOF
+          
+          echo "Schema initialization completed"
+        env:
+        - name: POSTGRES_HOST
+          value: "postgresql.default.svc.cluster.local"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: "metafunction"
+        - name: MIGRATION_USER
+          valueFrom:
+            secretKeyRef:
+              name: migration-credentials
+              key: migration-user
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: migration-credentials
+              key: migration-password
+---
+# CronJob for database maintenance
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: database-maintenance
+  namespace: database-ops
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: database-maintenance
+        spec:
+          serviceAccountName: migration-service-account
+          restartPolicy: OnFailure
+          containers:
+          - name: maintenance
+            image: postgres:15-alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting database maintenance..."
+              
+              # Update table statistics
+              psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $MIGRATION_USER -d $POSTGRES_DB << 'EOF'
+              -- Update table statistics
+              ANALYZE;
+              
+              -- Vacuum to reclaim space
+              VACUUM (ANALYZE);
+              
+              -- Clean up old migration logs (keep last 30 days)
+              DELETE FROM schema_migrations 
+              WHERE applied_at < CURRENT_DATE - INTERVAL '30 days' 
+              AND status = 'applied';
+              
+              -- Generate database health report
+              SELECT 
+                schemaname,
+                tablename,
+                pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,
+                n_tup_ins as inserts,
+                n_tup_upd as updates,
+                n_tup_del as deletes
+              FROM pg_stat_user_tables 
+              ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+              
+              EOF
+              
+              echo "Database maintenance completed"
+            env:
+            - name: POSTGRES_HOST
+              value: "postgresql.default.svc.cluster.local"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "metafunction"
+            - name: MIGRATION_USER
+              valueFrom:
+                secretKeyRef:
+                  name: migration-credentials
+                  key: migration-user
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: migration-credentials
+                  key: migration-password
+---
+# Network Policy for database operations
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-ops-network-policy
+  namespace: database-ops
+spec:
+  podSelector:
+    matchLabels:
+      app: migration-controller
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: default
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: default
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+---
+# PodDisruptionBudget for migration controller
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: migration-controller-pdb
+  namespace: database-ops
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: migration-controller

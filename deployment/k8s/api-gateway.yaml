@@ -1,0 +1,364 @@
+# API Gateway with Kong for MetaFunction
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kong
+---
+# Kong API Gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong-gateway
+  namespace: kong
+  labels:
+    app: kong-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kong-gateway
+  template:
+    metadata:
+      labels:
+        app: kong-gateway
+    spec:
+      serviceAccountName: kong-serviceaccount
+      containers:
+      - name: kong
+        image: kong:3.4.2-alpine
+        env:
+        - name: KONG_DATABASE
+          value: "off"
+        - name: KONG_DECLARATIVE_CONFIG
+          value: "/kong/declarative/kong.yml"
+        - name: KONG_PROXY_ACCESS_LOG
+          value: "/dev/stdout"
+        - name: KONG_ADMIN_ACCESS_LOG
+          value: "/dev/stdout"
+        - name: KONG_PROXY_ERROR_LOG
+          value: "/dev/stderr"
+        - name: KONG_ADMIN_ERROR_LOG
+          value: "/dev/stderr"
+        - name: KONG_ADMIN_LISTEN
+          value: "0.0.0.0:8001"
+        - name: KONG_ADMIN_GUI_URL
+          value: "http://kong-admin.metafunction.com"
+        - name: KONG_PLUGINS
+          value: "bundled,rate-limiting,key-auth,oauth2,cors,request-transformer,response-transformer"
+        ports:
+        - name: proxy
+          containerPort: 8000
+          protocol: TCP
+        - name: proxy-ssl
+          containerPort: 8443
+          protocol: TCP
+        - name: admin
+          containerPort: 8001
+          protocol: TCP
+        - name: admin-ssl
+          containerPort: 8444
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: kong-config
+          mountPath: /kong/declarative/
+      volumes:
+      - name: kong-config
+        configMap:
+          name: kong-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: kong
+spec:
+  type: LoadBalancer
+  ports:
+  - name: proxy
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  - name: proxy-ssl
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  selector:
+    app: kong-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-admin
+  namespace: kong
+spec:
+  type: ClusterIP
+  ports:
+  - name: admin
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  selector:
+    app: kong-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kong-serviceaccount
+  namespace: kong
+---
+# Kong Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: kong
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+    - name: metafunction-api
+      url: http://metafunction-service.metafunction.svc.cluster.local
+      plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 1000
+          policy: cluster
+          hide_client_headers: false
+      - name: key-auth
+        config:
+          key_names: ["X-API-Key"]
+          hide_credentials: true
+      - name: cors
+        config:
+          origins: ["*"]
+          methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+          headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "X-API-Key"]
+          exposed_headers: ["X-Auth-Token"]
+          credentials: true
+          max_age: 3600
+      - name: request-transformer
+        config:
+          add:
+            headers: ["X-Gateway: Kong"]
+      - name: response-transformer
+        config:
+          add:
+            headers: ["X-Response-Time: $(resp_latency)ms"]
+      routes:
+      - name: api-route
+        paths: ["/api"]
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        strip_path: false
+        preserve_host: true
+      - name: health-route
+        paths: ["/health"]
+        methods: ["GET"]
+        strip_path: false
+        plugins:
+        - name: rate-limiting
+          config:
+            minute: 1000
+            hour: 10000
+      - name: metrics-route
+        paths: ["/metrics"]
+        methods: ["GET"]
+        strip_path: false
+        plugins:
+        - name: key-auth
+          config:
+            key_names: ["X-Monitoring-Key"]
+
+    consumers:
+    - username: metafunction-app
+      keyauth_credentials:
+      - key: "mf-app-key-prod-2024"
+    - username: monitoring-system
+      keyauth_credentials:
+      - key: "monitoring-key-secure-2024"
+    
+    plugins:
+    - name: prometheus
+      config:
+        per_consumer: true
+    - name: file-log
+      config:
+        path: "/tmp/access.log"
+---
+# Kong Ingress Controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: ingress-kong
+  name: ingress-kong
+  namespace: kong
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingress-kong
+  template:
+    metadata:
+      labels:
+        app: ingress-kong
+    spec:
+      serviceAccountName: kong-serviceaccount
+      containers:
+      - name: ingress-controller
+        env:
+        - name: CONTROLLER_KONG_ADMIN_URL
+          value: "http://kong-admin:8001"
+        - name: CONTROLLER_PUBLISH_SERVICE
+          value: kong/kong-proxy
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: kong/kubernetes-ingress-controller:2.12
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 10254
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 10254
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        ports:
+        - containerPort: 8080
+          name: webhook
+          protocol: TCP
+        - containerPort: 10255
+          name: cmetrics
+          protocol: TCP
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+# RBAC for Kong Ingress Controller
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kong-ingress
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses/status"]
+  verbs: ["update"]
+- apiGroups: ["configuration.konghq.com"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kong-ingress
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kong-ingress
+subjects:
+- kind: ServiceAccount
+  name: kong-serviceaccount
+  namespace: kong
+---
+# Kong Plugin CRDs
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: metafunction-rate-limiting
+  namespace: metafunction
+config:
+  minute: 60
+  hour: 1000
+  policy: cluster
+  fault_tolerant: true
+plugin: rate-limiting
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: metafunction-key-auth
+  namespace: metafunction
+config:
+  key_names: ["X-API-Key"]
+  hide_credentials: true
+plugin: key-auth
+---
+# Kong Consumer for MetaFunction
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: metafunction-consumer
+  namespace: metafunction
+username: metafunction-app
+credentials:
+- metafunction-api-key
+---
+# API Key Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: metafunction-api-key
+  namespace: metafunction
+  labels:
+    konghq.com/credential: key-auth
+type: Opaque
+stringData:
+  key: "mf-secure-api-key-2024"

@@ -1,0 +1,146 @@
+# Cert-Manager for automatic TLS certificate management
+---
+# ClusterIssuer for Let's Encrypt production
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@metafunction.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+    - dns01:
+        cloudflare:
+          email: admin@metafunction.com
+          apiTokenSecretRef:
+            name: cloudflare-api-token
+            key: token
+---
+# ClusterIssuer for Let's Encrypt staging
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@metafunction.com
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+---
+# Certificate for MetaFunction domain
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: metafunction-tls
+  namespace: metafunction
+spec:
+  secretName: metafunction-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - metafunction.com
+  - www.metafunction.com
+  - api.metafunction.com
+  - admin.metafunction.com
+---
+# Certificate for monitoring services
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: monitoring-tls
+  namespace: metafunction
+spec:
+  secretName: monitoring-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - grafana.metafunction.com
+  - prometheus.metafunction.com
+  - kibana.metafunction.com
+---
+# Certificate for Kong Admin
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kong-admin-tls
+  namespace: kong
+spec:
+  secretName: kong-admin-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - kong-admin.metafunction.com
+---
+# Cloudflare API token secret (populate with actual token)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+type: Opaque
+stringData:
+  token: "your-cloudflare-api-token"
+---
+# Certificate request for internal services
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-services-tls
+  namespace: metafunction
+spec:
+  secretName: internal-services-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - vault.metafunction.internal
+  - consul.metafunction.internal
+  - pgadmin.metafunction.internal
+---
+# Self-signed issuer for development
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# Root CA certificate for internal services
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: metafunction-root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: MetaFunction Root CA
+  secretName: metafunction-root-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+---
+# CA issuer using the root CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: metafunction-ca-issuer
+spec:
+  ca:
+    secretName: metafunction-root-ca-secret
