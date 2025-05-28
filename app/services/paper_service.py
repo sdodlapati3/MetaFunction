@@ -198,11 +198,14 @@ class PaperService:
             logger.info(f"Resolving content for DOI: {result.doi}, PMID: {result.pmid}")
             
             # Use the existing resolver
-            full_text, metadata = resolve_full_text(
+            resolution_result = resolve_full_text(
                 pmid=result.pmid if result.pmid else None,
                 doi=result.doi if result.doi else None,
                 title=result.title if result.title else None
             )
+            
+            full_text = resolution_result.get('text') if resolution_result else None
+            metadata = resolution_result if resolution_result else {}
             
             if full_text:
                 # Determine if it's full text or abstract

@@ -901,6 +901,24 @@ def resolve_full_text(pmid=None, doi=None, title=None):
     # Helper function to log access attempts
     def log_attempt(source, success, message):
         access_logs.append({"source": source, "success": success, "message": message})
+    
+    # Helper function to fetch from different sources
+    def fetch_from_source(fetch_func, source_name, *args, is_full_text=None, **kwargs):
+        try:
+            text = fetch_func(*args, **kwargs)
+            if text:
+                # Determine if it's full text if not specified
+                if is_full_text is None:
+                    is_ft = is_full_text(text)
+                else:
+                    is_ft = is_full_text
+                
+                results.append((text, source_name, is_ft))
+                log_attempt(source_name, True, f"Retrieved {len(text)} characters")
+            else:
+                log_attempt(source_name, False, "No content returned")
+        except Exception as e:
+            log_attempt(source_name, False, f"Error: {str(e)}")
 
     # Try PubMed Central first - it worked successfully in the test!
     try:

@@ -1,3 +1,66 @@
 2025-05-28 03:03:48,688 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on http://127.0.0.1:5001
 2025-05-28 03:03:48,688 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:08:37,900 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-05-28 03:08:37,900 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:08:37,902 - INFO - _internal -  * Restarting with stat
+2025-05-28 03:08:39,065 - WARNING - _internal -  * Debugger is active!
+2025-05-28 03:08:39,080 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 03:08:50,450 - INFO - web - Index page loaded for session 7313886f-d1d4-466e-a7e6-5130b2657d61
+2025-05-28 03:08:50,537 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:08:50] "GET / HTTP/1.1" 200 -
+2025-05-28 03:08:50,983 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:08:50] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-05-28 03:09:32,057 - INFO - web - Processing chat request for session 7313886f-d1d4-466e-a7e6-5130b2657d61
+2025-05-28 03:09:32,057 - INFO - web - Selected model: gpt-4o-mini, Input length: 80
+2025-05-28 03:09:32,057 - INFO - paper_service - Processing query: Characterizing uncertainty in predictions of genomic sequence-to-activity models...
+2025-05-28 03:09:32,059 - INFO - web - No paper details found, using original query
+2025-05-28 03:09:44,845 - INFO - _client - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-05-28 03:09:44,861 - INFO - ai_service - Successfully got response from gpt-4o-mini
+2025-05-28 03:09:44,862 - INFO - logging_service - Chat interaction logged for session 7313886f-d1d4-466e-a7e6-5130b2657d61
+2025-05-28 03:09:44,863 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:09:44] "POST /chat HTTP/1.1" 200 -
+2025-05-28 03:16:45,039 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5002
+2025-05-28 03:16:45,039 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:16:48,042 - INFO - paper_service - Processing query: 10.1038/nature12373...
+2025-05-28 03:16:48,043 - INFO - paper_service - Found DOI in query: 10.1038/nature12373
+2025-05-28 03:16:48,043 - INFO - paper_service - Resolving content for DOI: 10.1038/nature12373, PMID: 
+2025-05-28 03:16:49,105 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:16:49] "GET /health HTTP/1.1" 200 -
+2025-05-28 03:16:49,109 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:16:49] "GET /api/models HTTP/1.1" 200 -
+2025-05-28 03:16:49,112 - WARNING - api - Validation error in resolve: At least one identifier (doi, pmid, title, pmcid) is required
+2025-05-28 03:16:49,112 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:16:49] "[31m[1mPOST /api/paper/resolve HTTP/1.1[0m" 400 -
+2025-05-28 03:17:36,268 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5003
+2025-05-28 03:17:36,268 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:18:29,747 - INFO - paper_service - Resolving content for DOI: 10.1038/nature12373, PMID: 
+2025-05-28 03:19:24,316 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-05-28 03:19:24,316 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:19:24,317 - INFO - _internal -  * Restarting with stat
+2025-05-28 03:19:25,455 - WARNING - _internal -  * Debugger is active!
+2025-05-28 03:19:25,466 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 03:20:30,064 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-05-28 03:20:30,064 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:20:30,065 - INFO - _internal -  * Restarting with stat
+2025-05-28 03:20:31,234 - WARNING - _internal -  * Debugger is active!
+2025-05-28 03:20:31,244 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 03:20:54,020 - INFO - web - Index page loaded for session e586f758-70f2-4fef-981e-e0cfaff2fe6c
+2025-05-28 03:20:54,034 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:20:54] "GET / HTTP/1.1" 200 -
+2025-05-28 03:21:54,553 - INFO - main - Starting MetaFunction on port 8000
+2025-05-28 03:21:54,553 - INFO - main - Debug mode: False
+2025-05-28 03:21:54,570 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.12.184:8000
+2025-05-28 03:21:54,570 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 03:22:00,071 - INFO - web - Index page loaded for session ec73e1e4-762b-4e4a-b721-dbe49fdb5857
+2025-05-28 03:22:00,108 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:22:00] "GET / HTTP/1.1" 200 -
+2025-05-28 03:22:00,501 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:22:00] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-05-28 03:22:24,133 - INFO - web - Processing chat request for session ec73e1e4-762b-4e4a-b721-dbe49fdb5857
+2025-05-28 03:22:24,137 - INFO - web - Selected model: gpt-4o-mini, Input length: 44
+2025-05-28 03:22:24,137 - INFO - paper_service - Processing query: Nanometre-scale thermometry in a living cell...
+2025-05-28 03:22:24,138 - INFO - web - No paper details found, using original query
+2025-05-28 03:22:38,984 - INFO - _client - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-05-28 03:22:38,998 - INFO - ai_service - Successfully got response from gpt-4o-mini
+2025-05-28 03:22:38,999 - INFO - logging_service - Chat interaction logged for session ec73e1e4-762b-4e4a-b721-dbe49fdb5857
+2025-05-28 03:22:39,000 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:22:39] "POST /chat HTTP/1.1" 200 -
