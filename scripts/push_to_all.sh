@@ -7,7 +7,7 @@ echo "🚀 Pushing MetaFunction to all repositories..."
 
 # Push to sdodlapa account (primary)
 echo "📤 Pushing to sdodlapa/MetaFunction..."
-git push origin main
+git push sdodlapa main
 
 if [ $? -eq 0 ]; then
     echo "✅ Successfully pushed to sdodlapa/MetaFunction"
@@ -18,7 +18,7 @@ fi
 
 # Push to SanjeevaRDodlapati account
 echo "📤 Pushing to SanjeevaRDodlapati/MetaFunction..."
-git push sanjeeva main
+git push sanjeevarddodlapati main
 
 if [ $? -eq 0 ]; then
     echo "✅ Successfully pushed to SanjeevaRDodlapati/MetaFunction"
