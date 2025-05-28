@@ -1,0 +1,798 @@
+# Advanced Container Security and Vulnerability Management for MetaFunction
+# Comprehensive security scanning, runtime protection, and compliance automation
+
+---
+# Security Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-ops
+  labels:
+    name: security-ops
+    pod-security.kubernetes.io/enforce: restricted
+---
+# Trivy Operator for Vulnerability Scanning
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-operator
+  namespace: security-ops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trivy-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "replicationcontrollers", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["aquasecurity.github.io"]
+  resources: ["vulnerabilityreports", "configauditreports", "clusterconfigauditreports"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trivy-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: trivy-operator
+subjects:
+- kind: ServiceAccount
+  name: trivy-operator
+  namespace: security-ops
+---
+# Trivy Operator Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-operator
+  namespace: security-ops
+  labels:
+    app: trivy-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-operator
+  template:
+    metadata:
+      labels:
+        app: trivy-operator
+    spec:
+      serviceAccountName: trivy-operator
+      containers:
+      - name: trivy-operator
+        image: aquasec/trivy-operator:0.16.4
+        args:
+        - --scan-job-timeout=5m
+        - --concurrent-scan-jobs-limit=10
+        - --scan-job-retry-after=30s
+        - --batch-delete-limit=10
+        - --batch-delete-delay=10s
+        env:
+        - name: OPERATOR_NAMESPACE
+          value: security-ops
+        - name: OPERATOR_TARGET_NAMESPACES
+          value: "metafunction,default,kube-system"
+        - name: OPERATOR_LOG_DEV_MODE
+          value: "false"
+        - name: OPERATOR_SCAN_JOB_TIMEOUT
+          value: "5m"
+        - name: OPERATOR_CONCURRENT_SCAN_JOBS_LIMIT
+          value: "10"
+        - name: OPERATOR_SCAN_JOB_RETRY_AFTER
+          value: "30s"
+        - name: OPERATOR_BATCH_DELETE_LIMIT
+          value: "10"
+        - name: OPERATOR_BATCH_DELETE_DELAY
+          value: "10s"
+        - name: OPERATOR_METRICS_BIND_ADDRESS
+          value: ":8080"
+        - name: OPERATOR_HEALTH_PROBE_BIND_ADDRESS
+          value: ":9090"
+        - name: OPERATOR_CIS_KUBERNETES_BENCHMARK_ENABLED
+          value: "true"
+        - name: OPERATOR_VULNERABILITY_SCANNER_ENABLED
+          value: "true"
+        - name: OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED
+          value: "true"
+        - name: OPERATOR_CLUSTER_COMPLIANCE_ENABLED
+          value: "true"
+        ports:
+        - containerPort: 8080
+          name: metrics
+        - containerPort: 9090
+          name: health
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+            - ALL
+---
+# Trivy Operator Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: trivy-operator-metrics
+  namespace: security-ops
+  labels:
+    app: trivy-operator
+spec:
+  selector:
+    app: trivy-operator
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+  - name: health
+    port: 9090
+    targetPort: 9090
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: trivy-operator
+  namespace: security-ops
+  labels:
+    app: trivy-operator
+spec:
+  selector:
+    matchLabels:
+      app: trivy-operator
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+# Twistlock/Prisma Cloud Runtime Security
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: twistlock-defender
+  namespace: security-ops
+spec:
+  selector:
+    matchLabels:
+      app: twistlock-defender
+  template:
+    metadata:
+      labels:
+        app: twistlock-defender
+    spec:
+      hostPID: true
+      hostNetwork: true
+      serviceAccountName: twistlock-defender
+      containers:
+      - name: twistlock-defender
+        image: registry-auth.twistlock.com/tw_<access_token>/twistlock/defender:defender_<version>
+        env:
+        - name: WS_ADDRESS
+          value: "wss://console.twistlock.com:8084"
+        - name: DEFENDER_TYPE
+          value: "containerDefender"
+        - name: LOG_PROD
+          value: "true"
+        - name: SYSTEMD_ENABLED
+          value: "false"
+        - name: DOCKER_CLIENT_ADDRESS
+          value: "/var/run/docker.sock"
+        - name: DEFENDER_CLUSTER_ID
+          value: "metafunction-cluster"
+        - name: DEFENDER_CLUSTER
+          value: "metafunction"
+        - name: MONITOR_SERVICE_ACCOUNTS
+          value: "true"
+        - name: MONITOR_ISTIO
+          value: "true"
+        securityContext:
+          readOnlyRootFilesystem: true
+          privileged: false
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_PTRACE
+            - SYS_CHROOT
+            - MKNOD
+            - SETFCAP
+            - IPC_LOCK
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "900m"
+          requests:
+            memory: "256Mi"
+            cpu: "256m"
+        volumeMounts:
+        - name: data-folder
+          mountPath: "/var/lib/twistlock"
+        - name: certificates
+          mountPath: "/var/lib/twistlock/certificates"
+        - name: docker-sock-folder
+          mountPath: "/var/run"
+        - name: passwd
+          mountPath: "/etc/passwd"
+          readOnly: true
+        - name: docker-netns
+          mountPath: "/var/run/docker/netns"
+          readOnly: true
+        - name: proc
+          mountPath: "/host/proc"
+          readOnly: true
+        - name: dev
+          mountPath: "/host/dev"
+          readOnly: true
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/defender_health_check.sh
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /usr/local/bin/defender_health_check.sh
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: certificates
+        configMap:
+          name: twistlock-defender-certificates
+          defaultMode: 256
+      - name: data-folder
+        hostPath:
+          path: "/var/lib/twistlock"
+      - name: docker-sock-folder
+        hostPath:
+          path: "/var/run"
+      - name: passwd
+        hostPath:
+          path: "/etc/passwd"
+      - name: docker-netns
+        hostPath:
+          path: "/var/run/docker/netns"
+      - name: proc
+        hostPath:
+          path: "/proc"
+      - name: dev
+        hostPath:
+          path: "/dev"
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+---
+# Service Account for Twistlock Defender
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: twistlock-defender
+  namespace: security-ops
+---
+# ClusterRole for Twistlock Defender
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: twistlock-defender
+rules:
+- apiGroups: [""]
+  resources: ["pods", "endpoints", "services"]
+  verbs: ["list", "get"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["list", "get"]
+- apiGroups: [""]
+  resources: ["pods/proxy"]
+  verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: twistlock-defender
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: twistlock-defender
+subjects:
+- kind: ServiceAccount
+  name: twistlock-defender
+  namespace: security-ops
+---
+# RBAC Scanner for Kubernetes Security Assessment
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rbac-scanner
+  namespace: security-ops
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: rbac-scanner
+          containers:
+          - name: rbac-scanner
+            image: aquasec/kube-bench:v0.6.15
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting RBAC Security Scan..."
+              # Run CIS Kubernetes benchmark
+              kube-bench --config-dir /opt/kube-bench/cfg --config /opt/kube-bench/cfg/config.yaml > /tmp/benchmark-results.txt
+              
+              # Check for overprivileged roles
+              kubectl get clusterrolebindings -o json | jq -r '.items[] | select(.subjects[]?.kind == "ServiceAccount" and (.roleRef.name == "cluster-admin" or .roleRef.name == "admin")) | "\(.metadata.name): \(.subjects[].name)"' > /tmp/overprivileged-roles.txt
+              
+              # Check for default service account usage
+              kubectl get pods --all-namespaces -o json | jq -r '.items[] | select(.spec.serviceAccountName == "default" or .spec.serviceAccountName == null) | "\(.metadata.namespace)/\(.metadata.name)"' > /tmp/default-sa-usage.txt
+              
+              # Generate security report
+              cat > /tmp/security-report.json << EOF
+              {
+                "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "cluster": "metafunction-prod",
+                "cis_benchmark": "$(cat /tmp/benchmark-results.txt | base64 -w 0)",
+                "overprivileged_roles": "$(cat /tmp/overprivileged-roles.txt | base64 -w 0)",
+                "default_sa_usage": "$(cat /tmp/default-sa-usage.txt | base64 -w 0)"
+              }
+              EOF
+              
+              # Store results in ConfigMap
+              kubectl create configmap security-scan-$(date +%Y%m%d) --from-file=/tmp/security-report.json -n security-ops --dry-run=client -o yaml | kubectl apply -f -
+              
+              echo "Security scan completed."
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          restartPolicy: OnFailure
+---
+# Service Account for RBAC Scanner
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rbac-scanner
+  namespace: security-ops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rbac-scanner
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["get", "list"]
+- apiGroups: ["apps", "extensions", "batch", "networking.k8s.io", "rbac.authorization.k8s.io"]
+  resources: ["*"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rbac-scanner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rbac-scanner
+subjects:
+- kind: ServiceAccount
+  name: rbac-scanner
+  namespace: security-ops
+---
+# Container Image Scanner CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: image-scanner
+  namespace: security-ops
+spec:
+  schedule: "0 4 * * *"  # Daily at 4 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: image-scanner
+            image: aquasec/trivy:0.47.0
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting container image vulnerability scan..."
+              
+              # Scan MetaFunction images
+              for image in $(kubectl get pods -n metafunction -o jsonpath='{.items[*].spec.containers[*].image}' | tr ' ' '\n' | sort -u); do
+                echo "Scanning image: $image"
+                trivy image --format json --output /tmp/$(echo $image | tr '/' '-' | tr ':' '-').json $image
+              done
+              
+              # Generate consolidated report
+              echo '{"timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","scans":[' > /tmp/consolidated-report.json
+              first=true
+              for file in /tmp/*.json; do
+                if [ "$first" = true ]; then
+                  first=false
+                else
+                  echo ',' >> /tmp/consolidated-report.json
+                fi
+                cat $file >> /tmp/consolidated-report.json
+              done
+              echo ']}' >> /tmp/consolidated-report.json
+              
+              # Create ConfigMap with scan results
+              kubectl create configmap image-scan-$(date +%Y%m%d) --from-file=/tmp/consolidated-report.json -n security-ops --dry-run=client -o yaml | kubectl apply -f -
+              
+              echo "Image scanning completed."
+            resources:
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+              requests:
+                cpu: 500m
+                memory: 512Mi
+            volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+              readOnly: true
+          volumes:
+          - name: docker-sock
+            hostPath:
+              path: /var/run/docker.sock
+          restartPolicy: OnFailure
+---
+# Security Dashboard for Grafana
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-dashboard
+  namespace: security-ops
+  labels:
+    grafana_dashboard: "1"
+data:
+  security-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "MetaFunction Security Dashboard",
+        "tags": ["security", "compliance", "vulnerabilities"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Critical Vulnerabilities",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "trivy_vulnerability_total{severity=\"CRITICAL\"}",
+                "legendFormat": "Critical CVEs"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 1},
+                    {"color": "red", "value": 5}
+                  ]
+                }
+              }
+            },
+            "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Security Events Timeline",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(falco_events_total[5m])",
+                "legendFormat": "{{ rule }}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 18, "x": 6, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Compliance Status",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "cis_benchmark_passed_total",
+                "legendFormat": "Passed"
+              },
+              {
+                "expr": "cis_benchmark_failed_total",
+                "legendFormat": "Failed"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Runtime Threats",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "twistlock_runtime_events_total",
+                "legendFormat": "{{ pod_name }} - {{ rule_name }}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Container Image Risks",
+            "type": "heatmap",
+            "targets": [
+              {
+                "expr": "trivy_vulnerability_total by (image, severity)",
+                "legendFormat": "{{ image }}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16}
+          }
+        ],
+        "time": {
+          "from": "now-24h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }
+---
+# Security Alert Rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-alert-rules
+  namespace: security-ops
+data:
+  security.rules: |
+    groups:
+    - name: security
+      rules:
+      - alert: CriticalVulnerabilityDetected
+        expr: trivy_vulnerability_total{severity="CRITICAL"} > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical vulnerability detected in container image"
+          description: "{{ $value }} critical vulnerabilities found in images"
+      
+      - alert: SuspiciousRuntimeActivity
+        expr: rate(falco_events_total{priority="Critical"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Suspicious runtime activity detected"
+          description: "Falco detected suspicious activity: {{ $labels.rule }}"
+      
+      - alert: ComplianceCheckFailed
+        expr: cis_benchmark_failed_total > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple compliance checks failed"
+          description: "{{ $value }} CIS benchmark checks failed"
+      
+      - alert: UnauthorizedPrivilegeEscalation
+        expr: rate(falco_events_total{rule=~".*privilege.*escalation.*"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Unauthorized privilege escalation detected"
+          description: "Potential privilege escalation attempt detected in cluster"
+      
+      - alert: SuspiciousNetworkActivity
+        expr: rate(falco_events_total{rule=~".*network.*"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Suspicious network activity detected"
+          description: "Unusual network activity patterns detected"
+---
+# Security Metrics Exporter
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-metrics-exporter
+  namespace: security-ops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security-metrics-exporter
+  template:
+    metadata:
+      labels:
+        app: security-metrics-exporter
+    spec:
+      serviceAccountName: security-metrics-exporter
+      containers:
+      - name: exporter
+        image: python:3.11-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install prometheus_client kubernetes
+          cat > /app/security_exporter.py << 'EOF'
+          #!/usr/bin/env python3
+          import time
+          import json
+          from prometheus_client import start_http_server, Gauge, Counter
+          from kubernetes import client, config
+          
+          # Load Kubernetes config
+          config.load_incluster_config()
+          v1 = client.CoreV1Api()
+          
+          # Prometheus metrics
+          vulnerability_gauge = Gauge('trivy_vulnerability_total', 'Total vulnerabilities by severity', ['severity', 'image'])
+          compliance_passed = Gauge('cis_benchmark_passed_total', 'Number of passed CIS benchmark checks')
+          compliance_failed = Gauge('cis_benchmark_failed_total', 'Number of failed CIS benchmark checks')
+          security_events = Counter('security_events_total', 'Total security events', ['type', 'severity'])
+          
+          def collect_metrics():
+              try:
+                  # Get security scan results from ConfigMaps
+                  config_maps = v1.list_namespaced_config_map(namespace='security-ops')
+                  
+                  for cm in config_maps.items:
+                      if cm.metadata.name.startswith('security-scan-'):
+                          try:
+                              data = json.loads(cm.data.get('security-report.json', '{}'))
+                              # Process benchmark results
+                              # This is a simplified example - actual implementation would parse the data
+                              compliance_passed.set(85)  # Example values
+                              compliance_failed.set(5)
+                          except:
+                              pass
+                      
+                      elif cm.metadata.name.startswith('image-scan-'):
+                          try:
+                              data = json.loads(cm.data.get('consolidated-report.json', '{}'))
+                              # Process vulnerability data
+                              # This is a simplified example
+                              vulnerability_gauge.labels(severity='CRITICAL', image='metafunction:latest').set(2)
+                              vulnerability_gauge.labels(severity='HIGH', image='metafunction:latest').set(8)
+                          except:
+                              pass
+                  
+                  print(f"Metrics collected at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+              
+              except Exception as e:
+                  print(f"Error collecting metrics: {e}")
+          
+          if __name__ == '__main__':
+              start_http_server(8000)
+              print("Security metrics exporter started on port 8000")
+              
+              while True:
+                  collect_metrics()
+                  time.sleep(60)  # Collect metrics every minute
+          EOF
+          
+          python /app/security_exporter.py
+        ports:
+        - containerPort: 8000
+          name: metrics
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+# Service Account for Security Metrics Exporter
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: security-metrics-exporter
+  namespace: security-ops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: security-metrics-exporter
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: security-metrics-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: security-metrics-exporter
+subjects:
+- kind: ServiceAccount
+  name: security-metrics-exporter
+  namespace: security-ops
+---
+# Service for Security Metrics Exporter
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-metrics-exporter
+  namespace: security-ops
+  labels:
+    app: security-metrics-exporter
+spec:
+  selector:
+    app: security-metrics-exporter
+  ports:
+  - name: metrics
+    port: 8000
+    targetPort: 8000
+---
+# ServiceMonitor for Security Metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: security-metrics
+  namespace: security-ops
+  labels:
+    app: security-metrics-exporter
+spec:
+  selector:
+    matchLabels:
+      app: security-metrics-exporter
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics

@@ -1,0 +1,1326 @@
+# Comprehensive Compliance Automation Framework for MetaFunction
+# Automated governance, risk management, and compliance checking
+
+---
+# Compliance Automation Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: compliance-automation
+  labels:
+    name: compliance-automation
+    compliance.framework: "automated"
+---
+# Compliance Controller Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compliance-controller
+  namespace: compliance-automation
+---
+# Compliance Controller RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compliance-controller
+rules:
+# Read access to all resources for compliance scanning
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+# Create compliance reports and events
+- apiGroups: [""]
+  resources: ["events", "configmaps"]
+  verbs: ["create", "update", "patch"]
+# Access to security policies
+- apiGroups: ["security.openshift.io", "policy"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compliance-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: compliance-controller
+subjects:
+- kind: ServiceAccount
+  name: compliance-controller
+  namespace: compliance-automation
+---
+# Open Policy Agent (OPA) for Policy Engine
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa-compliance-engine
+  namespace: compliance-automation
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: opa-compliance-engine
+  template:
+    metadata:
+      labels:
+        app: opa-compliance-engine
+    spec:
+      serviceAccountName: compliance-controller
+      containers:
+      - name: opa
+        image: openpolicyagent/opa:0.60.0-envoy
+        ports:
+        - containerPort: 8181
+        - containerPort: 8182
+        args:
+        - "run"
+        - "--server"
+        - "--config-file=/config/config.yaml"
+        - "/policies"
+        volumeMounts:
+        - name: opa-config
+          mountPath: /config
+        - name: compliance-policies
+          mountPath: /policies
+        - name: data-volume
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8181
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health?bundle=true
+            port: 8181
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: opa-config
+        configMap:
+          name: opa-config
+      - name: compliance-policies
+        configMap:
+          name: compliance-policies
+      - name: data-volume
+        emptyDir: {}
+---
+# OPA Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-config
+  namespace: compliance-automation
+data:
+  config.yaml: |
+    services:
+      authz:
+        url: http://opa-compliance-engine:8181
+    
+    bundles:
+      compliance:
+        resource: "/v1/data/compliance"
+        
+    decision_logs:
+      console: true
+      
+    status:
+      console: true
+      
+    server:
+      encoding:
+        gzip:
+          min_length: 1024
+      
+    plugins:
+      envoy_ext_authz_grpc:
+        addr: :9191
+        query: data.envoy.authz.allow
+---
+# Comprehensive Compliance Policies
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compliance-policies
+  namespace: compliance-automation
+data:
+  # SOC 2 Type II Compliance Policies
+  soc2-compliance.rego: |
+    package soc2.security
+    
+    import future.keywords.if
+    import future.keywords.in
+    
+    # Security Control SC-1: Access Controls
+    deny[msg] {
+        input.kind == "Pod"
+        input.spec.securityContext.runAsRoot
+        msg := "SOC2-SC-1: Containers must not run as root user"
+    }
+    
+    deny[msg] {
+        input.kind == "Pod"
+        container := input.spec.containers[_]
+        not container.securityContext.allowPrivilegeEscalation == false
+        msg := "SOC2-SC-1: Privilege escalation must be disabled"
+    }
+    
+    # Security Control SC-2: Logical Access
+    deny[msg] {
+        input.kind == "Service"
+        input.spec.type == "LoadBalancer"
+        not input.metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-ssl-cert"]
+        msg := "SOC2-SC-2: External services must use TLS encryption"
+    }
+    
+    # Security Control SC-3: Multi-factor Authentication
+    warn[msg] {
+        input.kind == "ServiceAccount"
+        not input.metadata.annotations["iam.gke.io/gcp-service-account"]
+        msg := "SOC2-SC-3: Service accounts should use workload identity"
+    }
+    
+    # Availability Control AV-1: System Monitoring
+    deny[msg] {
+        input.kind == "Deployment"
+        not input.spec.template.spec.containers[_].livenessProbe
+        msg := "SOC2-AV-1: All deployments must have liveness probes"
+    }
+    
+    deny[msg] {
+        input.kind == "Deployment"
+        not input.spec.template.spec.containers[_].readinessProbe
+        msg := "SOC2-AV-1: All deployments must have readiness probes"
+    }
+    
+    # Processing Integrity PI-1: Data Validation
+    deny[msg] {
+        input.kind == "ConfigMap"
+        contains(input.data[_], "password")
+        msg := "SOC2-PI-1: Passwords must not be stored in ConfigMaps"
+    }
+    
+    # Confidentiality C-1: Data Classification
+    warn[msg] {
+        input.kind in ["ConfigMap", "Secret"]
+        not input.metadata.labels["data-classification"]
+        msg := "SOC2-C-1: Resources should have data classification labels"
+    }
+    
+    # Privacy P-1: Data Retention
+    warn[msg] {
+        input.kind == "PersistentVolumeClaim"
+        not input.metadata.annotations["retention-policy"]
+        msg := "SOC2-P-1: PVCs should have retention policy annotations"
+    }
+  
+  # GDPR Compliance Policies
+  gdpr-compliance.rego: |
+    package gdpr.dataprotection
+    
+    import future.keywords.if
+    import future.keywords.in
+    
+    # Article 25: Data Protection by Design
+    deny[msg] {
+        input.kind == "Pod"
+        container := input.spec.containers[_]
+        not container.env[_].valueFrom.secretKeyRef
+        contains(container.env[_].value, "personal")
+        msg := "GDPR-Art25: Personal data environment variables must use secrets"
+    }
+    
+    # Article 30: Records of Processing
+    warn[msg] {
+        input.kind == "Deployment"
+        input.metadata.labels.app
+        not input.metadata.annotations["gdpr.data-processing-purpose"]
+        msg := "GDPR-Art30: Data processing purpose must be documented"
+    }
+    
+    # Article 32: Security of Processing
+    deny[msg] {
+        input.kind == "Ingress"
+        not input.spec.tls
+        msg := "GDPR-Art32: Ingress must use TLS for data in transit"
+    }
+    
+    deny[msg] {
+        input.kind == "Secret"
+        input.type == "Opaque"
+        not input.metadata.annotations["encryption.method"]
+        msg := "GDPR-Art32: Secrets must specify encryption method"
+    }
+    
+    # Article 35: Data Protection Impact Assessment
+    warn[msg] {
+        input.kind == "StatefulSet"
+        input.spec.volumeClaimTemplates
+        not input.metadata.annotations["gdpr.dpia-required"]
+        msg := "GDPR-Art35: StatefulSets with persistent data may require DPIA"
+    }
+    
+    # Right to Erasure (Article 17)
+    warn[msg] {
+        input.kind == "PersistentVolume"
+        not input.spec.persistentVolumeReclaimPolicy == "Delete"
+        msg := "GDPR-Art17: PVs should have Delete reclaim policy for data erasure"
+    }
+  
+  # NIST Framework Compliance
+  nist-compliance.rego: |
+    package nist.cybersecurity
+    
+    import future.keywords.if
+    import future.keywords.in
+    
+    # Identify (ID): Asset Management
+    warn[msg] {
+        input.kind in ["Deployment", "StatefulSet", "DaemonSet"]
+        not input.metadata.labels["asset-owner"]
+        msg := "NIST-ID.AM-1: Resources should have asset owner labels"
+    }
+    
+    # Protect (PR): Access Control
+    deny[msg] {
+        input.kind == "NetworkPolicy"
+        count(input.spec.ingress) == 0
+        count(input.spec.egress) == 0
+        msg := "NIST-PR.AC-3: NetworkPolicies must define ingress or egress rules"
+    }
+    
+    # Detect (DE): Continuous Monitoring
+    warn[msg] {
+        input.kind == "Deployment"
+        not input.metadata.annotations["monitoring.enabled"]
+        msg := "NIST-DE.CM-1: Deployments should enable monitoring"
+    }
+    
+    # Respond (RS): Response Planning
+    warn[msg] {
+        input.kind == "Namespace"
+        not input.metadata.annotations["incident-response-plan"]
+        msg := "NIST-RS.RP-1: Namespaces should have incident response plans"
+    }
+    
+    # Recover (RC): Recovery Planning
+    warn[msg] {
+        input.kind == "StatefulSet"
+        not input.metadata.annotations["backup-strategy"]
+        msg := "NIST-RC.RP-1: StatefulSets should have backup strategies"
+    }
+  
+  # ISO 27001 Compliance
+  iso27001-compliance.rego: |
+    package iso27001.isms
+    
+    import future.keywords.if
+    import future.keywords.in
+    
+    # A.9: Access Control
+    deny[msg] {
+        input.kind == "RoleBinding"
+        input.subjects[_].kind == "User"
+        input.subjects[_].name == "system:anonymous"
+        msg := "ISO27001-A.9.1.1: Anonymous access is prohibited"
+    }
+    
+    # A.10: Cryptography
+    deny[msg] {
+        input.kind == "Secret"
+        input.type == "kubernetes.io/tls"
+        not input.metadata.annotations["tls.version"]
+        msg := "ISO27001-A.10.1.1: TLS version must be specified for certificates"
+    }
+    
+    # A.12: Operations Security
+    deny[msg] {
+        input.kind == "CronJob"
+        not input.spec.jobTemplate.spec.template.spec.restartPolicy
+        msg := "ISO27001-A.12.1.2: CronJobs must specify restart policy"
+    }
+    
+    # A.13: Communications Security
+    deny[msg] {
+        input.kind == "Service"
+        input.spec.type == "NodePort"
+        not input.metadata.annotations["security.justified"]
+        msg := "ISO27001-A.13.1.1: NodePort services require security justification"
+    }
+    
+    # A.14: System Acquisition
+    warn[msg] {
+        input.kind == "Pod"
+        container := input.spec.containers[_]
+        contains(container.image, "latest")
+        msg := "ISO27001-A.14.2.1: Container images should use specific tags"
+    }
+---
+# Compliance Scanner Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa-compliance-engine
+  namespace: compliance-automation
+spec:
+  selector:
+    app: opa-compliance-engine
+  ports:
+  - name: http
+    port: 8181
+    targetPort: 8181
+  - name: metrics
+    port: 8182
+    targetPort: 8182
+  type: ClusterIP
+---
+# Compliance Assessment CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: compliance-assessment
+  namespace: compliance-automation
+spec:
+  schedule: "0 6 * * *"  # Daily at 6 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: compliance-controller
+          restartPolicy: OnFailure
+          containers:
+          - name: compliance-scanner
+            image: python:3.11-slim
+            command:
+            - /bin/bash
+            - -c
+            - |
+              pip install requests pyyaml kubernetes jinja2
+              
+              cat > /app/compliance_scanner.py << 'EOF'
+              import json
+              import yaml
+              import requests
+              import logging
+              from datetime import datetime, timezone
+              from kubernetes import client, config
+              from typing import Dict, List, Any
+              
+              # Configure logging
+              logging.basicConfig(level=logging.INFO)
+              logger = logging.getLogger(__name__)
+              
+              class ComplianceScanner:
+                  def __init__(self):
+                      config.load_incluster_config()
+                      self.v1 = client.CoreV1Api()
+                      self.apps_v1 = client.AppsV1Api()
+                      self.networking_v1 = client.NetworkingV1Api()
+                      self.rbac_v1 = client.RbacAuthorizationV1Api()
+                      self.opa_url = "http://opa-compliance-engine:8181"
+                      
+                  def scan_namespace(self, namespace: str) -> Dict[str, List[Dict]]:
+                      """Scan a namespace for compliance violations"""
+                      results = {
+                          'namespace': namespace,
+                          'timestamp': datetime.now(timezone.utc).isoformat(),
+                          'violations': [],
+                          'warnings': [],
+                          'compliant_resources': 0,
+                          'total_resources': 0
+                      }
+                      
+                      # Scan different resource types
+                      resource_scanners = [
+                          ('pods', self.scan_pods),
+                          ('deployments', self.scan_deployments),
+                          ('services', self.scan_services),
+                          ('configmaps', self.scan_configmaps),
+                          ('secrets', self.scan_secrets),
+                          ('networkpolicies', self.scan_network_policies),
+                          ('ingresses', self.scan_ingresses)
+                      ]
+                      
+                      for resource_type, scanner_func in resource_scanners:
+                          logger.info(f"Scanning {resource_type} in namespace {namespace}")
+                          resources = scanner_func(namespace)
+                          for resource in resources:
+                              results['total_resources'] += 1
+                              violations = self.check_compliance(resource)
+                              if violations['deny']:
+                                  results['violations'].extend(violations['deny'])
+                              if violations['warn']:
+                                  results['warnings'].extend(violations['warn'])
+                              if not violations['deny'] and not violations['warn']:
+                                  results['compliant_resources'] += 1
+                      
+                      return results
+                  
+                  def check_compliance(self, resource: Dict) -> Dict[str, List[str]]:
+                      """Check resource against OPA policies"""
+                      try:
+                          # Check SOC2 compliance
+                          soc2_response = requests.post(
+                              f"{self.opa_url}/v1/data/soc2/security",
+                              json={"input": resource},
+                              timeout=10
+                          )
+                          
+                          # Check GDPR compliance
+                          gdpr_response = requests.post(
+                              f"{self.opa_url}/v1/data/gdpr/dataprotection",
+                              json={"input": resource},
+                              timeout=10
+                          )
+                          
+                          # Check NIST compliance
+                          nist_response = requests.post(
+                              f"{self.opa_url}/v1/data/nist/cybersecurity",
+                              json={"input": resource},
+                              timeout=10
+                          )
+                          
+                          # Check ISO 27001 compliance
+                          iso_response = requests.post(
+                              f"{self.opa_url}/v1/data/iso27001/isms",
+                              json={"input": resource},
+                              timeout=10
+                          )
+                          
+                          violations = {'deny': [], 'warn': []}
+                          
+                          for response in [soc2_response, gdpr_response, nist_response, iso_response]:
+                              if response.status_code == 200:
+                                  result = response.json().get('result', {})
+                                  violations['deny'].extend(result.get('deny', []))
+                                  violations['warn'].extend(result.get('warn', []))
+                          
+                          return violations
+                          
+                      except Exception as e:
+                          logger.error(f"Error checking compliance: {e}")
+                          return {'deny': [], 'warn': []}
+                  
+                  def scan_pods(self, namespace: str) -> List[Dict]:
+                      """Scan pods in namespace"""
+                      try:
+                          pods = self.v1.list_namespaced_pod(namespace)
+                          return [self.k8s_resource_to_dict(pod) for pod in pods.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning pods: {e}")
+                          return []
+                  
+                  def scan_deployments(self, namespace: str) -> List[Dict]:
+                      """Scan deployments in namespace"""
+                      try:
+                          deployments = self.apps_v1.list_namespaced_deployment(namespace)
+                          return [self.k8s_resource_to_dict(deployment) for deployment in deployments.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning deployments: {e}")
+                          return []
+                  
+                  def scan_services(self, namespace: str) -> List[Dict]:
+                      """Scan services in namespace"""
+                      try:
+                          services = self.v1.list_namespaced_service(namespace)
+                          return [self.k8s_resource_to_dict(service) for service in services.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning services: {e}")
+                          return []
+                  
+                  def scan_configmaps(self, namespace: str) -> List[Dict]:
+                      """Scan configmaps in namespace"""
+                      try:
+                          configmaps = self.v1.list_namespaced_config_map(namespace)
+                          return [self.k8s_resource_to_dict(cm) for cm in configmaps.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning configmaps: {e}")
+                          return []
+                  
+                  def scan_secrets(self, namespace: str) -> List[Dict]:
+                      """Scan secrets in namespace"""
+                      try:
+                          secrets = self.v1.list_namespaced_secret(namespace)
+                          return [self.k8s_resource_to_dict(secret) for secret in secrets.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning secrets: {e}")
+                          return []
+                  
+                  def scan_network_policies(self, namespace: str) -> List[Dict]:
+                      """Scan network policies in namespace"""
+                      try:
+                          policies = self.networking_v1.list_namespaced_network_policy(namespace)
+                          return [self.k8s_resource_to_dict(policy) for policy in policies.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning network policies: {e}")
+                          return []
+                  
+                  def scan_ingresses(self, namespace: str) -> List[Dict]:
+                      """Scan ingresses in namespace"""
+                      try:
+                          ingresses = self.networking_v1.list_namespaced_ingress(namespace)
+                          return [self.k8s_resource_to_dict(ingress) for ingress in ingresses.items]
+                      except Exception as e:
+                          logger.error(f"Error scanning ingresses: {e}")
+                          return []
+                  
+                  def k8s_resource_to_dict(self, resource) -> Dict:
+                      """Convert Kubernetes resource to dictionary"""
+                      return json.loads(json.dumps(resource.to_dict(), default=str))
+                  
+                  def generate_compliance_report(self, results: List[Dict]) -> Dict:
+                      """Generate comprehensive compliance report"""
+                      total_violations = sum(len(r['violations']) for r in results)
+                      total_warnings = sum(len(r['warnings']) for r in results)
+                      total_resources = sum(r['total_resources'] for r in results)
+                      total_compliant = sum(r['compliant_resources'] for r in results)
+                      
+                      compliance_score = (total_compliant / total_resources * 100) if total_resources > 0 else 0
+                      
+                      report = {
+                          'report_metadata': {
+                              'generated_at': datetime.now(timezone.utc).isoformat(),
+                              'scanner_version': '1.0.0',
+                              'frameworks': ['SOC2', 'GDPR', 'NIST', 'ISO27001']
+                          },
+                          'executive_summary': {
+                              'compliance_score': round(compliance_score, 2),
+                              'total_resources_scanned': total_resources,
+                              'compliant_resources': total_compliant,
+                              'total_violations': total_violations,
+                              'total_warnings': total_warnings,
+                              'risk_level': self.calculate_risk_level(total_violations, total_warnings)
+                          },
+                          'namespace_results': results,
+                          'recommendations': self.generate_recommendations(results)
+                      }
+                      
+                      return report
+                  
+                  def calculate_risk_level(self, violations: int, warnings: int) -> str:
+                      """Calculate overall risk level"""
+                      if violations > 10:
+                          return "HIGH"
+                      elif violations > 5 or warnings > 20:
+                          return "MEDIUM"
+                      elif violations > 0 or warnings > 10:
+                          return "LOW"
+                      else:
+                          return "MINIMAL"
+                  
+                  def generate_recommendations(self, results: List[Dict]) -> List[str]:
+                      """Generate compliance recommendations"""
+                      recommendations = []
+                      
+                      # Count violation types
+                      violation_counts = {}
+                      for result in results:
+                          for violation in result['violations']:
+                              violation_type = violation.split(':')[0] if ':' in violation else 'Unknown'
+                              violation_counts[violation_type] = violation_counts.get(violation_type, 0) + 1
+                      
+                      # Generate targeted recommendations
+                      if violation_counts.get('SOC2-SC-1', 0) > 0:
+                          recommendations.append("Implement pod security contexts to prevent root execution")
+                      
+                      if violation_counts.get('GDPR-Art32', 0) > 0:
+                          recommendations.append("Enable TLS encryption for all ingress resources")
+                      
+                      if violation_counts.get('NIST-PR.AC-3', 0) > 0:
+                          recommendations.append("Define network policies for micro-segmentation")
+                      
+                      if violation_counts.get('ISO27001-A.9.1.1', 0) > 0:
+                          recommendations.append("Remove anonymous access from RBAC configurations")
+                      
+                      return recommendations
+                  
+                  def save_report(self, report: Dict, namespace: str = "compliance-automation"):
+                      """Save compliance report as ConfigMap"""
+                      report_name = f"compliance-report-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                      
+                      try:
+                          # Create ConfigMap with report
+                          body = client.V1ConfigMap(
+                              metadata=client.V1ObjectMeta(
+                                  name=report_name,
+                                  namespace=namespace,
+                                  labels={
+                                      "app": "compliance-scanner",
+                                      "report-type": "compliance",
+                                      "compliance-score": str(report['executive_summary']['compliance_score'])
+                                  }
+                              ),
+                              data={
+                                  "report.json": json.dumps(report, indent=2),
+                                  "summary.txt": self.generate_summary_text(report)
+                              }
+                          )
+                          
+                          self.v1.create_namespaced_config_map(namespace, body)
+                          logger.info(f"Compliance report saved as {report_name}")
+                          
+                      except Exception as e:
+                          logger.error(f"Error saving report: {e}")
+                  
+                  def generate_summary_text(self, report: Dict) -> str:
+                      """Generate human-readable summary"""
+                      summary = f"""
+              COMPLIANCE ASSESSMENT SUMMARY
+              =============================
+              
+              Generated: {report['report_metadata']['generated_at']}
+              Compliance Score: {report['executive_summary']['compliance_score']}%
+              Risk Level: {report['executive_summary']['risk_level']}
+              
+              Resources Scanned: {report['executive_summary']['total_resources_scanned']}
+              Compliant Resources: {report['executive_summary']['compliant_resources']}
+              Violations Found: {report['executive_summary']['total_violations']}
+              Warnings: {report['executive_summary']['total_warnings']}
+              
+              RECOMMENDATIONS:
+              """
+                      
+                      for i, rec in enumerate(report['recommendations'], 1):
+                          summary += f"{i}. {rec}\n"
+                      
+                      return summary
+              
+              # Main execution
+              if __name__ == "__main__":
+                  scanner = ComplianceScanner()
+                  
+                  # Target namespaces for scanning
+                  namespaces = ['metafunction', 'production', 'staging', 'kube-system']
+                  
+                  all_results = []
+                  
+                  for namespace in namespaces:
+                      logger.info(f"Starting compliance scan for namespace: {namespace}")
+                      try:
+                          result = scanner.scan_namespace(namespace)
+                          all_results.append(result)
+                          logger.info(f"Completed scan for {namespace}: {result['total_resources']} resources, {len(result['violations'])} violations")
+                      except Exception as e:
+                          logger.error(f"Error scanning namespace {namespace}: {e}")
+                  
+                  # Generate and save comprehensive report
+                  final_report = scanner.generate_compliance_report(all_results)
+                  scanner.save_report(final_report)
+                  
+                  logger.info(f"Compliance assessment completed. Score: {final_report['executive_summary']['compliance_score']}%")
+              EOF
+              
+              cd /app && python compliance_scanner.py
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "200m"
+            volumeMounts:
+            - name: scan-results
+              mountPath: /app/reports
+          volumes:
+          - name: scan-results
+            emptyDir: {}
+---
+# Compliance Dashboard Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-dashboard
+  namespace: compliance-automation
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: compliance-dashboard
+  template:
+    metadata:
+      labels:
+        app: compliance-dashboard
+    spec:
+      serviceAccountName: compliance-controller
+      containers:
+      - name: dashboard
+        image: python:3.11-slim
+        ports:
+        - containerPort: 8080
+        command:
+        - /bin/bash
+        - -c
+        - |
+          pip install flask kubernetes jinja2 plotly pandas
+          
+          cat > /app/dashboard.py << 'EOF'
+          from flask import Flask, render_template_string, jsonify
+          from kubernetes import client, config
+          import json
+          import pandas as pd
+          import plotly.graph_objs as go
+          import plotly.utils
+          from datetime import datetime, timedelta
+          
+          app = Flask(__name__)
+          
+          # Initialize Kubernetes client
+          config.load_incluster_config()
+          v1 = client.CoreV1Api()
+          
+          def get_compliance_reports():
+              """Fetch compliance reports from ConfigMaps"""
+              try:
+                  configmaps = v1.list_namespaced_config_map('compliance-automation')
+                  reports = []
+                  
+                  for cm in configmaps.items:
+                      if cm.metadata.labels and cm.metadata.labels.get('report-type') == 'compliance':
+                          report_data = json.loads(cm.data['report.json'])
+                          reports.append({
+                              'name': cm.metadata.name,
+                              'created': cm.metadata.creation_timestamp,
+                              'score': float(cm.metadata.labels.get('compliance-score', 0)),
+                              'data': report_data
+                          })
+                  
+                  return sorted(reports, key=lambda x: x['created'], reverse=True)
+              except Exception as e:
+                  print(f"Error fetching reports: {e}")
+                  return []
+          
+          @app.route('/')
+          def dashboard():
+              """Main compliance dashboard"""
+              reports = get_compliance_reports()
+              latest_report = reports[0] if reports else None
+              
+              dashboard_html = '''
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>MetaFunction Compliance Dashboard</title>
+                  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                  <style>
+                      body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+                      .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+                      .metric-card { background: white; padding: 20px; margin: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: inline-block; min-width: 200px; }
+                      .metric-value { font-size: 2em; font-weight: bold; }
+                      .metric-label { color: #666; margin-top: 5px; }
+                      .risk-high { color: #e74c3c; }
+                      .risk-medium { color: #f39c12; }
+                      .risk-low { color: #f1c40f; }
+                      .risk-minimal { color: #27ae60; }
+                      .chart-container { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                      .recommendations { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                      .violation-item { background: #fff5f5; border-left: 4px solid #e74c3c; padding: 10px; margin: 5px 0; }
+                      .warning-item { background: #fffbf0; border-left: 4px solid #f39c12; padding: 10px; margin: 5px 0; }
+                  </style>
+              </head>
+              <body>
+                  <div class="header">
+                      <h1>🛡️ MetaFunction Compliance Dashboard</h1>
+                      <p>Real-time compliance monitoring for SOC2, GDPR, NIST, and ISO 27001 frameworks</p>
+                  </div>
+                  
+                  {% if latest_report %}
+                  <div>
+                      <div class="metric-card">
+                          <div class="metric-value">{{ "%.1f"|format(latest_report.data.executive_summary.compliance_score) }}%</div>
+                          <div class="metric-label">Compliance Score</div>
+                      </div>
+                      
+                      <div class="metric-card">
+                          <div class="metric-value risk-{{ latest_report.data.executive_summary.risk_level.lower() }}">
+                              {{ latest_report.data.executive_summary.risk_level }}
+                          </div>
+                          <div class="metric-label">Risk Level</div>
+                      </div>
+                      
+                      <div class="metric-card">
+                          <div class="metric-value">{{ latest_report.data.executive_summary.total_violations }}</div>
+                          <div class="metric-label">Violations</div>
+                      </div>
+                      
+                      <div class="metric-card">
+                          <div class="metric-value">{{ latest_report.data.executive_summary.total_warnings }}</div>
+                          <div class="metric-label">Warnings</div>
+                      </div>
+                      
+                      <div class="metric-card">
+                          <div class="metric-value">{{ latest_report.data.executive_summary.total_resources_scanned }}</div>
+                          <div class="metric-label">Resources Scanned</div>
+                      </div>
+                  </div>
+                  
+                  <div class="chart-container">
+                      <h2>Compliance Trend</h2>
+                      <div id="compliance-trend" style="height: 400px;"></div>
+                  </div>
+                  
+                  <div class="chart-container">
+                      <h2>Violations by Namespace</h2>
+                      <div id="violations-by-namespace" style="height: 400px;"></div>
+                  </div>
+                  
+                  <div class="recommendations">
+                      <h2>📋 Recommended Actions</h2>
+                      {% for rec in latest_report.data.recommendations %}
+                      <div class="violation-item">{{ rec }}</div>
+                      {% endfor %}
+                  </div>
+                  
+                  <div class="recommendations">
+                      <h2>🚨 Recent Violations</h2>
+                      {% for namespace in latest_report.data.namespace_results %}
+                          {% if namespace.violations %}
+                              <h3>{{ namespace.namespace }}</h3>
+                              {% for violation in namespace.violations[:5] %}
+                              <div class="violation-item">{{ violation }}</div>
+                              {% endfor %}
+                          {% endif %}
+                      {% endfor %}
+                  </div>
+                  
+                  <div class="recommendations">
+                      <h2>⚠️ Recent Warnings</h2>
+                      {% for namespace in latest_report.data.namespace_results %}
+                          {% if namespace.warnings %}
+                              <h3>{{ namespace.namespace }}</h3>
+                              {% for warning in namespace.warnings[:5] %}
+                              <div class="warning-item">{{ warning }}</div>
+                              {% endfor %}
+                          {% endif %}
+                      {% endfor %}
+                  </div>
+                  {% else %}
+                  <div class="metric-card">
+                      <p>No compliance reports available. Please run the compliance scanner.</p>
+                  </div>
+                  {% endif %}
+                  
+                  <script>
+                      // Compliance trend chart
+                      fetch('/api/compliance-trend')
+                          .then(response => response.json())
+                          .then(data => {
+                              var trace = {
+                                  x: data.dates,
+                                  y: data.scores,
+                                  type: 'scatter',
+                                  mode: 'lines+markers',
+                                  name: 'Compliance Score',
+                                  line: {color: '#667eea', width: 3}
+                              };
+                              var layout = {
+                                  title: 'Compliance Score Over Time',
+                                  xaxis: {title: 'Date'},
+                                  yaxis: {title: 'Score (%)', range: [0, 100]}
+                              };
+                              Plotly.newPlot('compliance-trend', [trace], layout);
+                          });
+                      
+                      // Violations by namespace chart
+                      fetch('/api/violations-by-namespace')
+                          .then(response => response.json())
+                          .then(data => {
+                              var trace = {
+                                  x: data.namespaces,
+                                  y: data.violations,
+                                  type: 'bar',
+                                  marker: {color: '#e74c3c'}
+                              };
+                              var layout = {
+                                  title: 'Violations by Namespace',
+                                  xaxis: {title: 'Namespace'},
+                                  yaxis: {title: 'Number of Violations'}
+                              };
+                              Plotly.newPlot('violations-by-namespace', [trace], layout);
+                          });
+                  </script>
+              </body>
+              </html>
+              '''
+              return render_template_string(dashboard_html, latest_report=latest_report)
+          
+          @app.route('/api/compliance-trend')
+          def compliance_trend():
+              """API endpoint for compliance trend data"""
+              reports = get_compliance_reports()
+              
+              dates = []
+              scores = []
+              
+              for report in reversed(reports[-10:]):  # Last 10 reports
+                  dates.append(report['created'].strftime('%Y-%m-%d'))
+                  scores.append(report['score'])
+              
+              return jsonify({'dates': dates, 'scores': scores})
+          
+          @app.route('/api/violations-by-namespace')
+          def violations_by_namespace():
+              """API endpoint for violations by namespace"""
+              reports = get_compliance_reports()
+              
+              if not reports:
+                  return jsonify({'namespaces': [], 'violations': []})
+              
+              latest_report = reports[0]
+              namespaces = []
+              violations = []
+              
+              for ns_result in latest_report['data']['namespace_results']:
+                  namespaces.append(ns_result['namespace'])
+                  violations.append(len(ns_result['violations']))
+              
+              return jsonify({'namespaces': namespaces, 'violations': violations})
+          
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=8080, debug=True)
+          EOF
+          
+          cd /app && python dashboard.py
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+# Compliance Dashboard Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: compliance-dashboard
+  namespace: compliance-automation
+spec:
+  selector:
+    app: compliance-dashboard
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+# Compliance Remediation Engine
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-remediation
+  namespace: compliance-automation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: compliance-remediation
+  template:
+    metadata:
+      labels:
+        app: compliance-remediation
+    spec:
+      serviceAccountName: compliance-controller
+      containers:
+      - name: remediation-engine
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          pip install kubernetes pyyaml requests
+          
+          cat > /app/remediation.py << 'EOF'
+          import json
+          import yaml
+          import logging
+          from kubernetes import client, config
+          from typing import Dict, List
+          
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          class ComplianceRemediation:
+              def __init__(self):
+                  config.load_incluster_config()
+                  self.v1 = client.CoreV1Api()
+                  self.apps_v1 = client.AppsV1Api()
+                  
+              def auto_remediate_violations(self, namespace: str):
+                  """Automatically remediate common compliance violations"""
+                  logger.info(f"Starting auto-remediation for namespace: {namespace}")
+                  
+                  # Get the latest compliance report
+                  reports = self.get_compliance_reports()
+                  if not reports:
+                      logger.info("No compliance reports found")
+                      return
+                  
+                  latest_report = reports[0]
+                  namespace_results = [
+                      result for result in latest_report['data']['namespace_results']
+                      if result['namespace'] == namespace
+                  ]
+                  
+                  if not namespace_results:
+                      logger.info(f"No results found for namespace {namespace}")
+                      return
+                  
+                  violations = namespace_results[0]['violations']
+                  
+                  for violation in violations:
+                      try:
+                          if self.can_auto_remediate(violation):
+                              self.remediate_violation(violation, namespace)
+                      except Exception as e:
+                          logger.error(f"Error remediating violation: {e}")
+              
+              def can_auto_remediate(self, violation: str) -> bool:
+                  """Check if violation can be automatically remediated"""
+                  auto_remediable = [
+                      "SOC2-SC-1: Containers must not run as root user",
+                      "SOC2-SC-1: Privilege escalation must be disabled",
+                      "GDPR-Art32: Ingress must use TLS for data in transit",
+                      "NIST-PR.AC-3: NetworkPolicies must define ingress or egress rules"
+                  ]
+                  return any(violation.startswith(remediable) for remediable in auto_remediable)
+              
+              def remediate_violation(self, violation: str, namespace: str):
+                  """Remediate specific violation"""
+                  logger.info(f"Remediating violation: {violation}")
+                  
+                  if "Containers must not run as root user" in violation:
+                      self.fix_root_containers(namespace)
+                  elif "Privilege escalation must be disabled" in violation:
+                      self.fix_privilege_escalation(namespace)
+                  elif "Ingress must use TLS" in violation:
+                      self.fix_ingress_tls(namespace)
+                  elif "NetworkPolicies must define" in violation:
+                      self.create_default_network_policy(namespace)
+              
+              def fix_root_containers(self, namespace: str):
+                  """Fix containers running as root"""
+                  deployments = self.apps_v1.list_namespaced_deployment(namespace)
+                  
+                  for deployment in deployments.items:
+                      modified = False
+                      
+                      for container in deployment.spec.template.spec.containers:
+                          if not container.security_context:
+                              container.security_context = client.V1SecurityContext()
+                          
+                          if not container.security_context.run_as_non_root:
+                              container.security_context.run_as_non_root = True
+                              container.security_context.run_as_user = 1000
+                              modified = True
+                      
+                      if modified:
+                          self.apps_v1.patch_namespaced_deployment(
+                              name=deployment.metadata.name,
+                              namespace=namespace,
+                              body=deployment
+                          )
+                          logger.info(f"Fixed root user issue in deployment: {deployment.metadata.name}")
+              
+              def fix_privilege_escalation(self, namespace: str):
+                  """Fix privilege escalation issues"""
+                  deployments = self.apps_v1.list_namespaced_deployment(namespace)
+                  
+                  for deployment in deployments.items:
+                      modified = False
+                      
+                      for container in deployment.spec.template.spec.containers:
+                          if not container.security_context:
+                              container.security_context = client.V1SecurityContext()
+                          
+                          if container.security_context.allow_privilege_escalation is None:
+                              container.security_context.allow_privilege_escalation = False
+                              modified = True
+                      
+                      if modified:
+                          self.apps_v1.patch_namespaced_deployment(
+                              name=deployment.metadata.name,
+                              namespace=namespace,
+                              body=deployment
+                          )
+                          logger.info(f"Fixed privilege escalation in deployment: {deployment.metadata.name}")
+              
+              def create_default_network_policy(self, namespace: str):
+                  """Create default network policy if none exists"""
+                  networking_v1 = client.NetworkingV1Api()
+                  
+                  try:
+                      policies = networking_v1.list_namespaced_network_policy(namespace)
+                      if len(policies.items) == 0:
+                          # Create default deny-all policy
+                          network_policy = client.V1NetworkPolicy(
+                              metadata=client.V1ObjectMeta(
+                                  name="default-deny-all",
+                                  namespace=namespace,
+                                  labels={"compliance.auto-created": "true"}
+                              ),
+                              spec=client.V1NetworkPolicySpec(
+                                  pod_selector=client.V1LabelSelector(),
+                                  policy_types=["Ingress", "Egress"]
+                              )
+                          )
+                          
+                          networking_v1.create_namespaced_network_policy(
+                              namespace=namespace,
+                              body=network_policy
+                          )
+                          logger.info(f"Created default network policy for namespace: {namespace}")
+                  
+                  except Exception as e:
+                      logger.error(f"Error creating network policy: {e}")
+              
+              def get_compliance_reports(self):
+                  """Get compliance reports from ConfigMaps"""
+                  try:
+                      configmaps = self.v1.list_namespaced_config_map('compliance-automation')
+                      reports = []
+                      
+                      for cm in configmaps.items:
+                          if cm.metadata.labels and cm.metadata.labels.get('report-type') == 'compliance':
+                              report_data = json.loads(cm.data['report.json'])
+                              reports.append({
+                                  'name': cm.metadata.name,
+                                  'created': cm.metadata.creation_timestamp,
+                                  'data': report_data
+                              })
+                      
+                      return sorted(reports, key=lambda x: x['created'], reverse=True)
+                  except Exception as e:
+                      logger.error(f"Error fetching reports: {e}")
+                      return []
+          
+          # Main execution
+          if __name__ == "__main__":
+              import time
+              
+              remediation = ComplianceRemediation()
+              
+              while True:
+                  try:
+                      # Run auto-remediation for target namespaces
+                      target_namespaces = ['metafunction', 'production', 'staging']
+                      
+                      for namespace in target_namespaces:
+                          remediation.auto_remediate_violations(namespace)
+                      
+                      logger.info("Compliance remediation cycle completed")
+                      
+                  except Exception as e:
+                      logger.error(f"Error in remediation cycle: {e}")
+                  
+                  # Wait 1 hour before next cycle
+                  time.sleep(3600)
+          EOF
+          
+          cd /app && python remediation.py
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"
+---
+# Compliance Monitoring with Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compliance-monitoring
+  namespace: compliance-automation
+spec:
+  selector:
+    matchLabels:
+      app: opa-compliance-engine
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+---
+# Compliance Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: compliance-alerts
+  namespace: compliance-automation
+spec:
+  groups:
+  - name: compliance.rules
+    rules:
+    - alert: ComplianceScoreLow
+      expr: |
+        compliance_score_percentage < 80
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Compliance score is below 80%"
+        description: "Current compliance score is {{ $value }}%"
+        
+    - alert: ComplianceScoreCritical
+      expr: |
+        compliance_score_percentage < 60
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Compliance score is critically low"
+        description: "Current compliance score is {{ $value }}%. Immediate action required."
+        
+    - alert: HighNumberOfViolations
+      expr: |
+        compliance_violations_total > 50
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High number of compliance violations detected"
+        description: "{{ $value }} compliance violations found"
+        
+    - alert: ComplianceScannerDown
+      expr: |
+        up{job="opa-compliance-engine"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Compliance scanner is down"
+        description: "OPA compliance engine is not responding"
+---
+# Ingress for Compliance Dashboard
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: compliance-dashboard-ingress
+  namespace: compliance-automation
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - compliance.metafunction.com
+    secretName: compliance-dashboard-tls
+  rules:
+  - host: compliance.metafunction.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: compliance-dashboard
+            port:
+              number: 80

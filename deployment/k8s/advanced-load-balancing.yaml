@@ -1,0 +1,769 @@
+# Advanced Load Balancing and Traffic Management for MetaFunction
+# Intelligent routing, traffic shaping, and advanced load balancing strategies
+
+---
+# Traffic Management Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traffic-management
+  labels:
+    name: traffic-management
+---
+# Envoy Proxy for Advanced Load Balancing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-proxy
+  namespace: traffic-management
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: envoy-proxy
+  template:
+    metadata:
+      labels:
+        app: envoy-proxy
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28.0
+        ports:
+        - containerPort: 8080
+        - containerPort: 8001  # Admin interface
+        - containerPort: 9901  # Metrics
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+        - name: certs
+          mountPath: /etc/ssl/certs
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: envoy-config
+        configMap:
+          name: envoy-config
+      - name: certs
+        secret:
+          secretName: tls-certs
+---
+# Envoy Configuration for Advanced Load Balancing
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+  namespace: traffic-management
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8001
+    
+    static_resources:
+      listeners:
+      - name: metafunction_listener
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: metafunction_http
+              codec_type: AUTO
+              
+              # Request routing with advanced matching
+              route_config:
+                name: metafunction_routes
+                virtual_hosts:
+                - name: metafunction_service
+                  domains: ["*"]
+                  routes:
+                  # AI API routes with circuit breaker
+                  - match:
+                      prefix: "/api/ai/"
+                    route:
+                      cluster: metafunction_ai_cluster
+                      timeout: 30s
+                      retry_policy:
+                        retry_on: "5xx,gateway-error,connect-failure"
+                        num_retries: 3
+                        per_try_timeout: 10s
+                        retry_back_off:
+                          base_interval: 0.5s
+                          max_interval: 5s
+                  
+                  # Search API with rate limiting
+                  - match:
+                      prefix: "/api/search"
+                    route:
+                      cluster: metafunction_search_cluster
+                      timeout: 15s
+                      rate_limits:
+                      - actions:
+                        - request_headers:
+                            header_name: "x-user-id"
+                            descriptor_value: "user_rate_limit"
+                  
+                  # Paper API with caching
+                  - match:
+                      prefix: "/api/paper"
+                    route:
+                      cluster: metafunction_paper_cluster
+                      timeout: 10s
+                      
+                  # Frontend routes
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: metafunction_frontend_cluster
+                      timeout: 5s
+              
+              # HTTP filters
+              http_filters:
+              # Rate limiting filter
+              - name: envoy.filters.http.ratelimit
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                  domain: metafunction
+                  failure_mode_deny: false
+                  rate_limit_service:
+                    grpc_service:
+                      envoy_grpc:
+                        cluster_name: rate_limit_service
+                    transport_api_version: V3
+              
+              # Circuit breaker filter
+              - name: envoy.filters.http.local_ratelimit
+                typed_config:
+                  "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                  type_url: type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                  value:
+                    stat_prefix: local_rate_limiter
+                    token_bucket:
+                      max_tokens: 1000
+                      tokens_per_fill: 100
+                      fill_interval: 1s
+              
+              # Fault injection for testing
+              - name: envoy.filters.http.fault
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+                  abort:
+                    percentage:
+                      numerator: 0
+                      denominator: MILLION
+                    http_status: 503
+                  delay:
+                    percentage:
+                      numerator: 0
+                      denominator: MILLION
+                    fixed_delay: 0.1s
+              
+              # WASM filter for custom logic
+              - name: envoy.filters.http.wasm
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                  config:
+                    name: "traffic_routing"
+                    root_id: "traffic_routing"
+                    vm_config:
+                      vm_id: "traffic_routing"
+                      runtime: "envoy.wasm.runtime.v8"
+                      code:
+                        local:
+                          inline_string: |
+                            class TrafficRoutingFilter {
+                              onRequestHeaders() {
+                                // Custom traffic routing logic
+                                const userAgent = this.getRequestHeader("user-agent");
+                                const xForwardedFor = this.getRequestHeader("x-forwarded-for");
+                                
+                                // Geographic routing
+                                if (this.getRequestHeader("cloudflare-ipcountry") === "CN") {
+                                  this.setRequestHeader("x-route-region", "asia");
+                                } else if (this.getRequestHeader("cloudflare-ipcountry") === "GB") {
+                                  this.setRequestHeader("x-route-region", "europe");
+                                } else {
+                                  this.setRequestHeader("x-route-region", "americas");
+                                }
+                                
+                                // A/B testing
+                                if (Math.random() < 0.1) {
+                                  this.setRequestHeader("x-canary", "true");
+                                }
+                                
+                                return FilterHeadersStatus.Continue;
+                              }
+                            }
+              
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      
+      clusters:
+      # Main application cluster with advanced load balancing
+      - name: metafunction_frontend_cluster
+        connect_timeout: 5s
+        type: STRICT_DNS
+        lb_policy: LEAST_REQUEST  # Intelligent load balancing
+        load_assignment:
+          cluster_name: metafunction_frontend_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: metafunction-frontend-service.metafunction.svc.cluster.local
+                    port_value: 80
+        health_checks:
+        - timeout: 3s
+          interval: 10s
+          unhealthy_threshold: 3
+          healthy_threshold: 2
+          http_health_check:
+            path: "/health"
+        
+        # Circuit breaker configuration
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 1000
+            max_pending_requests: 100
+            max_requests: 1000
+            max_retries: 3
+            track_remaining: true
+        
+        # Outlier detection
+        outlier_detection:
+          consecutive_5xx: 3
+          interval: 30s
+          base_ejection_time: 30s
+          max_ejection_percent: 50
+          split_external_local_origin_errors: true
+      
+      # AI service cluster with specialized routing
+      - name: metafunction_ai_cluster
+        connect_timeout: 10s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: metafunction_ai_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: metafunction-ai-service.metafunction.svc.cluster.local
+                    port_value: 80
+        health_checks:
+        - timeout: 5s
+          interval: 15s
+          unhealthy_threshold: 2
+          healthy_threshold: 2
+          http_health_check:
+            path: "/health"
+        
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 100
+            max_pending_requests: 50
+            max_requests: 100
+            max_retries: 1
+      
+      # Search service cluster
+      - name: metafunction_search_cluster
+        connect_timeout: 3s
+        type: STRICT_DNS
+        lb_policy: LEAST_REQUEST
+        load_assignment:
+          cluster_name: metafunction_search_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: metafunction-search-service.metafunction.svc.cluster.local
+                    port_value: 80
+        
+      # Paper service cluster
+      - name: metafunction_paper_cluster
+        connect_timeout: 5s
+        type: STRICT_DNS
+        lb_policy: RANDOM
+        load_assignment:
+          cluster_name: metafunction_paper_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: metafunction-paper-service.metafunction.svc.cluster.local
+                    port_value: 80
+      
+      # Rate limiting service
+      - name: rate_limit_service
+        connect_timeout: 0.25s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: rate_limit_service
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: ratelimit-service.traffic-management.svc.cluster.local
+                    port_value: 8081
+---
+# Rate Limiting Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimit-service
+  namespace: traffic-management
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ratelimit-service
+  template:
+    metadata:
+      labels:
+        app: ratelimit-service
+    spec:
+      containers:
+      - name: ratelimit
+        image: envoyproxy/ratelimit:master
+        ports:
+        - containerPort: 8080
+        - containerPort: 8081
+        - containerPort: 6070
+        env:
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: REDIS_SOCKET_TYPE
+          value: "tcp"
+        - name: REDIS_URL
+          value: "redis-cache-cluster.metafunction.svc.cluster.local:6379"
+        - name: USE_STATSD
+          value: "false"
+        - name: RUNTIME_ROOT
+          value: "/data"
+        - name: RUNTIME_SUBDIRECTORY
+          value: "ratelimit"
+        - name: RUNTIME_WATCH_ROOT
+          value: "false"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /data/ratelimit/config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: config-volume
+        configMap:
+          name: ratelimit-config
+---
+# Rate Limiting Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ratelimit-config
+  namespace: traffic-management
+data:
+  config.yaml: |
+    domain: metafunction
+    descriptors:
+    # User-based rate limiting
+    - key: user_rate_limit
+      value: standard_user
+      rate_limit:
+        unit: minute
+        requests_per_unit: 100
+    
+    - key: user_rate_limit
+      value: premium_user
+      rate_limit:
+        unit: minute
+        requests_per_unit: 1000
+    
+    # API endpoint rate limiting
+    - key: api_rate_limit
+      value: search_api
+      rate_limit:
+        unit: second
+        requests_per_unit: 10
+    
+    - key: api_rate_limit
+      value: ai_api
+      rate_limit:
+        unit: minute
+        requests_per_unit: 20
+    
+    # IP-based rate limiting
+    - key: ip_rate_limit
+      rate_limit:
+        unit: minute
+        requests_per_unit: 500
+    
+    # Global rate limiting
+    - key: global_rate_limit
+      rate_limit:
+        unit: second
+        requests_per_unit: 1000
+---
+# Envoy Proxy Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-proxy-service
+  namespace: traffic-management
+spec:
+  selector:
+    app: envoy-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: admin
+      port: 8001
+      targetPort: 8001
+    - name: metrics
+      port: 9901
+      targetPort: 9901
+  type: LoadBalancer
+---
+# Rate Limit Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimit-service
+  namespace: traffic-management
+spec:
+  selector:
+    app: ratelimit-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+    - name: debug
+      port: 6070
+      targetPort: 6070
+  type: ClusterIP
+---
+# Traffic Splitting with Flagger
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: metafunction-canary
+  namespace: metafunction
+spec:
+  # Deployment reference
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: metafunction
+  
+  # Service reference
+  service:
+    port: 80
+    targetPort: 8000
+    gateways:
+    - metafunction-gateway
+    hosts:
+    - metafunction.company.com
+  
+  # Canary analysis
+  analysis:
+    # Schedule interval (default 60s)
+    interval: 30s
+    # Max number of failed metric checks before rollback
+    threshold: 5
+    # Max traffic percentage routed to canary
+    maxWeight: 50
+    # Canary increment step
+    stepWeight: 10
+    # Prometheus checks
+    metrics:
+    - name: request-success-rate
+      # Minimum req success rate (non 5xx responses)
+      thresholdRange:
+        min: 99
+      interval: 1m
+    - name: request-duration
+      # Maximum req duration P99
+      thresholdRange:
+        max: 500
+      interval: 30s
+    # Webhooks for custom checks
+    webhooks:
+    - name: acceptance-test
+      type: pre-rollout
+      url: http://test-runner.test/
+      timeout: 30s
+      metadata:
+        type: bash
+        cmd: "curl -sd 'test' http://metafunction-canary/api/health | grep ok"
+    - name: load-test
+      url: http://test-runner.test/
+      timeout: 5s
+      metadata:
+        type: cmd
+        cmd: "hey -z 1m -q 10 -c 2 http://metafunction-canary/"
+---
+# Global Load Balancer Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: global-load-balancer-config
+  namespace: traffic-management
+data:
+  global-lb.yaml: |
+    # Global Load Balancer Configuration
+    regions:
+      primary:
+        name: "us-west-2"
+        endpoint: "metafunction-us-west-2.company.com"
+        weight: 70
+        health_check_url: "/health"
+        latency_threshold_ms: 100
+        
+      secondary:
+        name: "us-east-1"
+        endpoint: "metafunction-us-east-1.company.com"
+        weight: 20
+        health_check_url: "/health"
+        latency_threshold_ms: 150
+        
+      tertiary:
+        name: "eu-west-1"
+        endpoint: "metafunction-eu-west-1.company.com"
+        weight: 10
+        health_check_url: "/health"
+        latency_threshold_ms: 200
+    
+    # Traffic routing policies
+    routing_policies:
+      geographic:
+        enabled: true
+        rules:
+          - countries: ["US", "CA", "MX"]
+            regions: ["us-west-2", "us-east-1"]
+          - countries: ["GB", "DE", "FR", "IT", "ES"]
+            regions: ["eu-west-1", "us-east-1"]
+          - countries: ["CN", "JP", "KR", "SG"]
+            regions: ["us-west-2"]
+      
+      performance:
+        enabled: true
+        latency_based_routing: true
+        health_check_grace_period: "30s"
+        
+      failover:
+        enabled: true
+        failure_threshold: 3
+        recovery_threshold: 2
+        automatic_failback: true
+        
+    # CDN integration
+    cdn_config:
+      provider: "cloudflare"
+      cache_everything: false
+      cache_ttl: 3600
+      
+      cache_rules:
+        - path: "/static/*"
+          ttl: 86400
+          cache_level: "cache_everything"
+        - path: "/api/paper/*"
+          ttl: 1800
+          cache_level: "standard"
+        - path: "/api/search*"
+          ttl: 600
+          cache_level: "standard"
+---
+# Advanced Load Balancing Monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: envoy-proxy-monitor
+  namespace: traffic-management
+spec:
+  selector:
+    matchLabels:
+      app: envoy-proxy
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /stats/prometheus
+---
+# Traffic Management Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: traffic-management-alerts
+  namespace: traffic-management
+spec:
+  groups:
+  - name: traffic.rules
+    rules:
+    - alert: HighLatency
+      expr: |
+        histogram_quantile(0.95, 
+          sum(rate(envoy_http_downstream_rq_time_bucket[5m])) by (le)
+        ) > 1000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High latency detected"
+        description: "95th percentile latency is {{ $value }}ms"
+        
+    - alert: HighErrorRate
+      expr: |
+        (
+          sum(rate(envoy_http_downstream_rq_5xx[5m])) /
+          sum(rate(envoy_http_downstream_rq_completed[5m]))
+        ) > 0.05
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value | humanizePercentage }}"
+        
+    - alert: CircuitBreakerOpen
+      expr: envoy_cluster_circuit_breakers_default_remaining_open > 0
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Circuit breaker is open"
+        description: "Circuit breaker for {{ $labels.cluster_name }} is open"
+        
+    - alert: RateLimitHit
+      expr: rate(ratelimit_total_hits[5m]) > 100
+      for: 5m
+      labels:
+        severity: info
+      annotations:
+        summary: "Rate limiting activated"
+        description: "Rate limiting is actively blocking {{ $value }} requests/sec"
+---
+# Traffic Management Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traffic-management-dashboard
+  namespace: traffic-management
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Traffic Management Dashboard",
+        "tags": ["traffic", "load-balancing", "envoy"],
+        "panels": [
+          {
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(envoy_http_downstream_rq_completed[5m]))",
+                "legendFormat": "Total Requests/sec"
+              },
+              {
+                "expr": "sum(rate(envoy_http_downstream_rq_5xx[5m]))",
+                "legendFormat": "5xx Errors/sec"
+              }
+            ]
+          },
+          {
+            "title": "Response Time Percentiles",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.50, sum(rate(envoy_http_downstream_rq_time_bucket[5m])) by (le))",
+                "legendFormat": "P50"
+              },
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(envoy_http_downstream_rq_time_bucket[5m])) by (le))",
+                "legendFormat": "P95"
+              },
+              {
+                "expr": "histogram_quantile(0.99, sum(rate(envoy_http_downstream_rq_time_bucket[5m])) by (le))",
+                "legendFormat": "P99"
+              }
+            ]
+          },
+          {
+            "title": "Load Balancer Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "envoy_cluster_membership_healthy",
+                "legendFormat": "Healthy Endpoints"
+              },
+              {
+                "expr": "envoy_cluster_membership_total",
+                "legendFormat": "Total Endpoints"
+              }
+            ]
+          },
+          {
+            "title": "Circuit Breaker Status",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "envoy_cluster_circuit_breakers_default_remaining_open",
+                "format": "table"
+              }
+            ]
+          },
+          {
+            "title": "Rate Limiting",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ratelimit_total_hits[5m])",
+                "legendFormat": "Rate Limited Requests/sec"
+              },
+              {
+                "expr": "rate(ratelimit_over_limit[5m])",
+                "legendFormat": "Over Limit/sec"
+              }
+            ]
+          }
+        ]
+      }
+    }

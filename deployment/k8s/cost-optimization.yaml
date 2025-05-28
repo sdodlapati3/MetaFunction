@@ -1,0 +1,607 @@
+# Cost Optimization and FinOps for MetaFunction
+# Comprehensive cost management, resource optimization, and financial operations
+
+---
+# Cost Management Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finops
+  labels:
+    name: finops
+    cost-center: "engineering"
+    budget-owner: "platform-team"
+---
+# KubeCost for Cost Monitoring
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubecost
+  namespace: finops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubecost
+  template:
+    metadata:
+      labels:
+        app: kubecost
+    spec:
+      containers:
+      - name: cost-analyzer
+        image: kubecost/cost-analyzer:latest
+        ports:
+        - containerPort: 9090
+        env:
+        - name: PROMETHEUS_SERVER_ENDPOINT
+          value: "http://prometheus-service.metafunction.svc.cluster.local:9090"
+        - name: CLUSTER_ID
+          value: "metafunction-production"
+        - name: AWS_CLUSTER_ID
+          value: "metafunction-eks"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: cost-analyzer-data
+          mountPath: /var/configs
+      - name: cost-model
+        image: kubecost/cost-model:latest
+        ports:
+        - containerPort: 9003
+        env:
+        - name: PROMETHEUS_SERVER_ENDPOINT
+          value: "http://prometheus-service.metafunction.svc.cluster.local:9090"
+        - name: CLOUD_PROVIDER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cloud-provider-secret
+              key: api-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: cost-analyzer-data
+        persistentVolumeClaim:
+          claimName: kubecost-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kubecost-pvc
+  namespace: finops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubecost-service
+  namespace: finops
+spec:
+  selector:
+    app: kubecost
+  ports:
+    - name: cost-analyzer
+      port: 9090
+      targetPort: 9090
+    - name: cost-model
+      port: 9003
+      targetPort: 9003
+  type: ClusterIP
+---
+# Cost Optimization Policies
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-optimization-policies
+  namespace: finops
+data:
+  cost-policies.yaml: |
+    # Resource Right-sizing Policies
+    resource_policies:
+      cpu_utilization:
+        target_utilization: 70  # Target 70% CPU utilization
+        scale_down_threshold: 30  # Scale down if below 30%
+        scale_up_threshold: 85   # Scale up if above 85%
+        
+      memory_utilization:
+        target_utilization: 80  # Target 80% memory utilization
+        scale_down_threshold: 40
+        scale_up_threshold: 90
+        
+      storage_optimization:
+        unused_pv_threshold_days: 7
+        underutilized_threshold_percent: 20
+        
+    # Cost Allocation Rules
+    cost_allocation:
+      default_labels:
+        - "app"
+        - "environment"
+        - "team"
+        - "cost-center"
+        
+      showback_allocation:
+        metafunction-frontend: 30
+        metafunction-backend: 50
+        metafunction-ai-service: 15
+        shared-services: 5
+        
+    # Budget Policies
+    budgets:
+      monthly_cluster_budget: 5000  # USD
+      development_budget: 1000
+      staging_budget: 800
+      production_budget: 3200
+      
+    alerts:
+      - threshold: 80  # Alert at 80% of budget
+        frequency: "daily"
+        recipients: ["finops@company.com", "platform-team@company.com"]
+      - threshold: 95  # Critical alert at 95%
+        frequency: "hourly"
+        recipients: ["cto@company.com", "finops@company.com"]
+---
+# Vertical Pod Autoscaler for Right-sizing
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: metafunction-vpa
+  namespace: metafunction
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: metafunction
+  updatePolicy:
+    updateMode: "Auto"  # Automatically apply recommendations
+  resourcePolicy:
+    containerPolicies:
+    - containerName: metafunction
+      minAllowed:
+        cpu: 100m
+        memory: 128Mi
+      maxAllowed:
+        cpu: 2000m
+        memory: 4Gi
+      controlledResources: ["cpu", "memory"]
+---
+# Resource Quotas per Environment
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: development-quota
+  namespace: development
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    requests.storage: 100Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "10"
+    pods: "20"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: staging-quota
+  namespace: staging
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    requests.storage: 200Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    persistentvolumeclaims: "20"
+    pods: "50"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: production-quota
+  namespace: metafunction
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    requests.storage: 500Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "50"
+    pods: "100"
+---
+# Cost-aware Scheduling
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spot-instance-config
+  namespace: finops
+data:
+  spot-config.yaml: |
+    # Spot Instance Configuration
+    spot_instance_groups:
+      # Non-critical workloads on spot instances
+      - name: "batch-processing"
+        instance_types: ["m5.large", "m5.xlarge", "c5.large"]
+        spot_allocation_strategy: "diversified"
+        max_spot_percentage: 80
+        
+      - name: "development"
+        instance_types: ["t3.medium", "t3.large"]
+        spot_allocation_strategy: "lowest-price"
+        max_spot_percentage: 100
+        
+      # Production workloads with mixed instances
+      - name: "production"
+        instance_types: ["c5.large", "c5.xlarge", "m5.large"]
+        spot_allocation_strategy: "diversified"
+        max_spot_percentage: 50  # 50% spot, 50% on-demand
+        
+    # Node affinity for cost optimization
+    node_affinity_rules:
+      development:
+        spot_preference: required
+        instance_preference: ["t3.medium", "t3.large"]
+        
+      staging:
+        spot_preference: preferred
+        instance_preference: ["c5.large", "m5.large"]
+        
+      production:
+        spot_preference: preferred
+        instance_preference: ["c5.xlarge", "m5.xlarge"]
+---
+# Cluster Autoscaler Configuration for Cost Optimization
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app: cluster-autoscaler
+    spec:
+      serviceAccountName: cluster-autoscaler
+      containers:
+      - image: k8s.gcr.io/autoscaling/cluster-autoscaler:v1.27.3
+        name: cluster-autoscaler
+        command:
+        - ./cluster-autoscaler
+        - --v=4
+        - --stderrthreshold=info
+        - --cloud-provider=aws
+        - --skip-nodes-with-local-storage=false
+        - --expander=least-waste  # Cost-optimized expansion
+        - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/metafunction
+        - --balance-similar-node-groups
+        - --scale-down-enabled=true
+        - --scale-down-delay-after-add=10m
+        - --scale-down-unneeded-time=10m
+        - --scale-down-utilization-threshold=0.5  # Aggressive scale-down for cost savings
+        - --max-node-provision-time=15m
+        resources:
+          limits:
+            cpu: 100m
+            memory: 300Mi
+          requests:
+            cpu: 100m
+            memory: 300Mi
+        env:
+        - name: AWS_REGION
+          value: us-west-2
+---
+# Cost Monitoring Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cost-optimization-alerts
+  namespace: finops
+spec:
+  groups:
+  - name: cost.rules
+    rules:
+    - alert: HighCostNamespace
+      expr: |
+        (
+          (kubecost_cluster_costs_hourly{cluster_id="metafunction-production"} * 24 * 30) > 2000
+        )
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "High cost detected in namespace {{ $labels.namespace }}"
+        description: "Namespace {{ $labels.namespace }} is projected to cost over $2000/month"
+        
+    - alert: UnusedResources
+      expr: |
+        (
+          avg_over_time(container_cpu_usage_seconds_total[7d]) == 0
+        ) and on(pod) (
+          kube_pod_info{created_by_kind!="Job"}
+        )
+      for: 4h
+      labels:
+        severity: info
+      annotations:
+        summary: "Unused resources detected"
+        description: "Pod {{ $labels.pod }} has had zero CPU usage for 7 days"
+        
+    - alert: OverProvisionedResources
+      expr: |
+        (
+          (container_spec_cpu_quota / container_spec_cpu_period) / 
+          (rate(container_cpu_usage_seconds_total[5m]) + 0.001)
+        ) > 10
+      for: 30m
+      labels:
+        severity: info
+      annotations:
+        summary: "Over-provisioned CPU detected"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is over-provisioned by {{ $value }}x"
+        
+    - alert: BudgetExceeded
+      expr: |
+        kubecost_cluster_costs_monthly{cluster_id="metafunction-production"} > 5000
+      for: 1h
+      labels:
+        severity: critical
+      annotations:
+        summary: "Monthly budget exceeded"
+        description: "Monthly costs have exceeded the $5000 budget: ${{ $value }}"
+---
+# FinOps Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finops-dashboard
+  namespace: finops
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "MetaFunction FinOps Dashboard",
+        "tags": ["finops", "cost", "optimization"],
+        "panels": [
+          {
+            "title": "Monthly Cost Trend",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "kubecost_cluster_costs_monthly",
+                "legendFormat": "Total Monthly Cost"
+              }
+            ]
+          },
+          {
+            "title": "Cost by Namespace",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum by (namespace) (kubecost_namespace_costs_hourly * 24 * 30)",
+                "legendFormat": "{{ namespace }}"
+              }
+            ]
+          },
+          {
+            "title": "Cost Efficiency Metrics",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "avg(container_cpu_usage_seconds_total) / avg(container_spec_cpu_quota / container_spec_cpu_period) * 100",
+                "legendFormat": "CPU Efficiency %"
+              },
+              {
+                "expr": "avg(container_memory_working_set_bytes) / avg(container_spec_memory_limit_bytes) * 100",
+                "legendFormat": "Memory Efficiency %"
+              }
+            ]
+          },
+          {
+            "title": "Spot vs On-Demand Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum by (instance_lifecycle) (kube_node_info)",
+                "legendFormat": "{{ instance_lifecycle }}"
+              }
+            ]
+          },
+          {
+            "title": "Resource Waste Indicators",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "topk(10, (container_spec_cpu_quota - container_cpu_usage_seconds_total) / container_spec_cpu_quota * 100)",
+                "format": "table"
+              }
+            ]
+          }
+        ]
+      }
+    }
+---
+# Cost Optimization CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cost-optimization-scan
+  namespace: finops
+spec:
+  schedule: "0 6 * * *"  # Daily at 6 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: cost-optimizer
+            image: alpine/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Cost optimization scanning script
+              echo "Starting cost optimization scan..."
+              
+              # Query KubeCost API for recommendations
+              KUBECOST_URL="http://kubecost-service.finops.svc.cluster.local:9090"
+              
+              # Get resource recommendations
+              curl -s "$KUBECOST_URL/model/savings/requestSizing" > /tmp/sizing-recommendations.json
+              
+              # Get unused resources
+              curl -s "$KUBECOST_URL/model/assets/unused" > /tmp/unused-resources.json
+              
+              # Generate report
+              cat > /tmp/cost-report.txt << EOF
+              =====================================
+              Daily Cost Optimization Report
+              Date: $(date)
+              =====================================
+              
+              RESOURCE SIZING RECOMMENDATIONS:
+              $(cat /tmp/sizing-recommendations.json | head -20)
+              
+              UNUSED RESOURCES:
+              $(cat /tmp/unused-resources.json | head -20)
+              
+              ACTIONS RECOMMENDED:
+              1. Review over-provisioned resources
+              2. Clean up unused PVCs older than 7 days
+              3. Consider spot instances for development workloads
+              4. Optimize container resource requests
+              
+              =====================================
+              EOF
+              
+              # Send report (placeholder - integrate with notification system)
+              echo "Cost optimization scan completed"
+              cat /tmp/cost-report.txt
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+---
+# Cloud Provider Cost Integration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloud-provider-secret
+  namespace: finops
+type: Opaque
+stringData:
+  api-key: "REPLACE_WITH_AWS_COST_EXPLORER_API_KEY"
+  billing-account-id: "REPLACE_WITH_AWS_ACCOUNT_ID"
+---
+# Resource Cleanup Policy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cleanup-policies
+  namespace: finops
+data:
+  cleanup-config.yaml: |
+    # Automated resource cleanup policies
+    cleanup_policies:
+      # PVC cleanup
+      persistent_volumes:
+        unused_threshold_days: 7
+        auto_cleanup: false  # Manual approval required
+        notification_days: [3, 1]  # Notify 3 days and 1 day before cleanup
+        
+      # Pod cleanup
+      pods:
+        completed_job_retention_hours: 24
+        failed_job_retention_hours: 72
+        evicted_pod_retention_hours: 1
+        
+      # Image cleanup
+      container_images:
+        unused_threshold_days: 30
+        keep_latest_tags: 5
+        
+      # Log cleanup
+      logs:
+        retention_days: 30
+        archive_threshold_days: 7
+        
+    # Exception patterns (resources to never auto-cleanup)
+    exceptions:
+      namespaces: ["kube-system", "metafunction", "monitoring"]
+      labels:
+        - "preserve=true"
+        - "backup=required"
+      annotations:
+        - "finops.company.com/no-cleanup=true"
+---
+# Cost Tagging Strategy
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cost-tagging-strategy
+  namespace: finops
+data:
+  tagging-strategy.yaml: |
+    # Mandatory tags for cost allocation
+    mandatory_tags:
+      - key: "cost-center"
+        values: ["engineering", "product", "marketing", "sales"]
+        
+      - key: "environment"
+        values: ["development", "staging", "production"]
+        
+      - key: "team"
+        values: ["platform", "backend", "frontend", "ai", "devops"]
+        
+      - key: "project"
+        values: ["metafunction", "shared-services"]
+        
+    # Optional tags for enhanced tracking
+    optional_tags:
+      - key: "owner"
+        description: "Primary owner/maintainer"
+        
+      - key: "business-unit"
+        description: "Business unit responsible for costs"
+        
+      - key: "application"
+        description: "Application component name"
+        
+    # Tag validation rules
+    validation_rules:
+      - pattern: "^[a-z0-9-]+$"
+        description: "Only lowercase letters, numbers, and hyphens"
+        
+      - max_length: 63
+        description: "Maximum tag length is 63 characters"
+        
+    # Cost allocation weights
+    allocation_weights:
+      production: 0.7
+      staging: 0.2
+      development: 0.1

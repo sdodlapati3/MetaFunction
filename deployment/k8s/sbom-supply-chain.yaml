@@ -1,0 +1,795 @@
+# Software Bill of Materials (SBOM) Generation and Supply Chain Security
+# Comprehensive supply chain security with SBOM generation, vulnerability tracking, and provenance
+
+---
+# Supply Chain Security Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: supply-chain-security
+  labels:
+    name: supply-chain-security
+---
+# SBOM Generation Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sbom-generator
+  namespace: supply-chain-security
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sbom-generator
+  template:
+    metadata:
+      labels:
+        app: sbom-generator
+    spec:
+      serviceAccountName: sbom-generator-sa
+      containers:
+      - name: sbom-generator
+        image: anchore/syft:latest
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "SBOM Generator Service Starting..."
+          
+          # Start HTTP server for SBOM generation requests
+          cat > /tmp/sbom-server.py << 'EOF'
+          import http.server
+          import socketserver
+          import json
+          import subprocess
+          import os
+          import tempfile
+          from urllib.parse import urlparse, parse_qs
+          
+          class SBOMHandler(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path.startswith('/health'):
+                      self.send_response(200)
+                      self.send_header('Content-type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(json.dumps({"status": "healthy"}).encode())
+                      return
+                  
+                  parsed_url = urlparse(self.path)
+                  if parsed_url.path == '/generate-sbom':
+                      query_params = parse_qs(parsed_url.query)
+                      image = query_params.get('image', [None])[0]
+                      format_type = query_params.get('format', ['spdx-json'])[0]
+                      
+                      if not image:
+                          self.send_error(400, "Missing image parameter")
+                          return
+                      
+                      try:
+                          # Generate SBOM using Syft
+                          result = subprocess.run([
+                              'syft', image, 
+                              '-o', format_type,
+                              '--file', '/tmp/sbom-output'
+                          ], capture_output=True, text=True, timeout=300)
+                          
+                          if result.returncode == 0:
+                              with open('/tmp/sbom-output', 'r') as f:
+                                  sbom_content = f.read()
+                              
+                              self.send_response(200)
+                              if format_type.endswith('json'):
+                                  self.send_header('Content-type', 'application/json')
+                              else:
+                                  self.send_header('Content-type', 'text/plain')
+                              self.end_headers()
+                              self.wfile.write(sbom_content.encode())
+                          else:
+                              self.send_error(500, f"SBOM generation failed: {result.stderr}")
+                      
+                      except subprocess.TimeoutExpired:
+                          self.send_error(500, "SBOM generation timed out")
+                      except Exception as e:
+                          self.send_error(500, f"Error: {str(e)}")
+                  else:
+                      self.send_error(404, "Not found")
+          
+          if __name__ == "__main__":
+              PORT = 8080
+              with socketserver.TCPServer(("", PORT), SBOMHandler) as httpd:
+                  print(f"SBOM Server started on port {PORT}")
+                  httpd.serve_forever()
+          EOF
+          
+          python3 /tmp/sbom-server.py
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DOCKER_HOST
+          value: "unix:///var/run/docker.sock"
+        volumeMounts:
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+        - name: sbom-storage
+          mountPath: /sbom-storage
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+      - name: sbom-storage
+        persistentVolumeClaim:
+          claimName: sbom-storage-pvc
+---
+# SBOM Storage PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sbom-storage-pvc
+  namespace: supply-chain-security
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+---
+# SBOM Generator Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sbom-generator-sa
+  namespace: supply-chain-security
+---
+# RBAC for SBOM Generator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sbom-generator-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "containers"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sbom-generator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sbom-generator-role
+subjects:
+- kind: ServiceAccount
+  name: sbom-generator-sa
+  namespace: supply-chain-security
+---
+# SBOM Generator Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sbom-generator-service
+  namespace: supply-chain-security
+spec:
+  selector:
+    app: sbom-generator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+# Vulnerability Scanner with Grype
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerability-scanner
+  namespace: supply-chain-security
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vulnerability-scanner
+  template:
+    metadata:
+      labels:
+        app: vulnerability-scanner
+    spec:
+      containers:
+      - name: grype
+        image: anchore/grype:latest
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "Vulnerability Scanner Starting..."
+          
+          cat > /tmp/vuln-server.py << 'EOF'
+          import http.server
+          import socketserver
+          import json
+          import subprocess
+          import tempfile
+          from urllib.parse import urlparse, parse_qs
+          
+          class VulnHandler(http.server.BaseHTTPRequestHandler):
+              def do_GET(self):
+                  if self.path.startswith('/health'):
+                      self.send_response(200)
+                      self.send_header('Content-type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(json.dumps({"status": "healthy"}).encode())
+                      return
+                  
+                  parsed_url = urlparse(self.path)
+                  if parsed_url.path == '/scan':
+                      query_params = parse_qs(parsed_url.query)
+                      target = query_params.get('target', [None])[0]
+                      format_type = query_params.get('format', ['json'])[0]
+                      
+                      if not target:
+                          self.send_error(400, "Missing target parameter")
+                          return
+                      
+                      try:
+                          # Scan for vulnerabilities using Grype
+                          result = subprocess.run([
+                              'grype', target,
+                              '-o', format_type,
+                              '--file', '/tmp/vuln-output'
+                          ], capture_output=True, text=True, timeout=600)
+                          
+                          if result.returncode == 0:
+                              with open('/tmp/vuln-output', 'r') as f:
+                                  vuln_content = f.read()
+                              
+                              self.send_response(200)
+                              self.send_header('Content-type', 'application/json')
+                              self.end_headers()
+                              self.wfile.write(vuln_content.encode())
+                          else:
+                              self.send_error(500, f"Vulnerability scan failed: {result.stderr}")
+                      
+                      except subprocess.TimeoutExpired:
+                          self.send_error(500, "Vulnerability scan timed out")
+                      except Exception as e:
+                          self.send_error(500, f"Error: {str(e)}")
+                  else:
+                      self.send_error(404, "Not found")
+          
+          if __name__ == "__main__":
+              PORT = 8081
+              with socketserver.TCPServer(("", PORT), VulnHandler) as httpd:
+                  print(f"Vulnerability Scanner started on port {PORT}")
+                  httpd.serve_forever()
+          EOF
+          
+          python3 /tmp/vuln-server.py
+        ports:
+        - containerPort: 8081
+        volumeMounts:
+        - name: vuln-storage
+          mountPath: /vuln-storage
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "1Gi"
+            cpu: "600m"
+      volumes:
+      - name: vuln-storage
+        persistentVolumeClaim:
+          claimName: vuln-storage-pvc
+---
+# Vulnerability Storage PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vuln-storage-pvc
+  namespace: supply-chain-security
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Vulnerability Scanner Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vulnerability-scanner-service
+  namespace: supply-chain-security
+spec:
+  selector:
+    app: vulnerability-scanner
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP
+---
+# Supply Chain Policy Engine
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supply-chain-policies
+  namespace: supply-chain-security
+data:
+  policies.rego: |
+    package supply_chain
+    
+    # SBOM validation policies
+    sbom_required := true
+    
+    # Allowed base images
+    allowed_base_images := {
+        "alpine:latest",
+        "ubuntu:22.04",
+        "python:3.11-slim",
+        "node:18-alpine",
+        "nginx:1.24-alpine"
+    }
+    
+    # Vulnerability policies
+    max_critical_vulnerabilities := 0
+    max_high_vulnerabilities := 5
+    max_medium_vulnerabilities := 20
+    
+    # License policies
+    allowed_licenses := {
+        "MIT",
+        "Apache-2.0",
+        "BSD-3-Clause",
+        "BSD-2-Clause",
+        "ISC"
+    }
+    
+    # Prohibited licenses
+    prohibited_licenses := {
+        "GPL-3.0",
+        "AGPL-3.0",
+        "SSPL-1.0"
+    }
+    
+    # Package source validation
+    trusted_registries := {
+        "docker.io",
+        "ghcr.io",
+        "gcr.io",
+        "quay.io"
+    }
+    
+    # SBOM completeness check
+    sbom_complete[msg] {
+        not input.sbom.packages
+        msg := "SBOM missing packages information"
+    }
+    
+    sbom_complete[msg] {
+        count(input.sbom.packages) == 0
+        msg := "SBOM contains no packages"
+    }
+    
+    # Vulnerability check
+    vulnerability_violation[msg] {
+        critical_count := count([vuln | vuln := input.vulnerabilities[_]; vuln.severity == "Critical"])
+        critical_count > max_critical_vulnerabilities
+        msg := sprintf("Too many critical vulnerabilities: %d (max: %d)", [critical_count, max_critical_vulnerabilities])
+    }
+    
+    vulnerability_violation[msg] {
+        high_count := count([vuln | vuln := input.vulnerabilities[_]; vuln.severity == "High"])
+        high_count > max_high_vulnerabilities
+        msg := sprintf("Too many high vulnerabilities: %d (max: %d)", [high_count, max_high_vulnerabilities])
+    }
+    
+    # License compliance check
+    license_violation[msg] {
+        pkg := input.sbom.packages[_]
+        pkg.license
+        prohibited_licenses[pkg.license]
+        msg := sprintf("Prohibited license found: %s in package %s", [pkg.license, pkg.name])
+    }
+    
+    license_violation[msg] {
+        pkg := input.sbom.packages[_]
+        pkg.license
+        not allowed_licenses[pkg.license]
+        not prohibited_licenses[pkg.license]
+        msg := sprintf("Unknown license found: %s in package %s", [pkg.license, pkg.name])
+    }
+    
+    # Base image validation
+    base_image_violation[msg] {
+        not allowed_base_images[input.base_image]
+        msg := sprintf("Base image not allowed: %s", [input.base_image])
+    }
+    
+    # Registry validation
+    registry_violation[msg] {
+        registry := split(input.image, "/")[0]
+        not trusted_registries[registry]
+        msg := sprintf("Untrusted registry: %s", [registry])
+    }
+    
+    # Overall compliance decision
+    allow {
+        count(sbom_complete) == 0
+        count(vulnerability_violation) == 0
+        count(license_violation) == 0
+        count(base_image_violation) == 0
+        count(registry_violation) == 0
+    }
+    
+    deny[msg] {
+        count(sbom_complete) > 0
+        msg := "SBOM validation failed"
+    }
+    
+    deny[msg] {
+        count(vulnerability_violation) > 0
+        msg := "Vulnerability check failed"
+    }
+    
+    deny[msg] {
+        count(license_violation) > 0
+        msg := "License compliance failed"
+    }
+---
+# Automated SBOM Generation CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: automated-sbom-generation
+  namespace: supply-chain-security
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: sbom-generator-sa
+          containers:
+          - name: sbom-automation
+            image: alpine/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              apk add --no-cache kubectl jq
+              
+              echo "Starting automated SBOM generation..."
+              
+              # Get all deployments in metafunction namespace
+              kubectl get deployments -n metafunction -o json | jq -r '.items[].spec.template.spec.containers[].image' | sort -u > /tmp/images.txt
+              
+              # Generate SBOM for each image
+              while read -r image; do
+                echo "Generating SBOM for: $image"
+                
+                # Generate SBOM
+                curl -s "http://sbom-generator-service:8080/generate-sbom?image=${image}&format=spdx-json" > "/sbom-storage/${image//\//_}-sbom.json"
+                
+                # Generate vulnerability report
+                curl -s "http://vulnerability-scanner-service:8081/scan?target=${image}&format=json" > "/sbom-storage/${image//\//_}-vulns.json"
+                
+                echo "SBOM and vulnerability scan completed for: $image"
+              done < /tmp/images.txt
+              
+              echo "Automated SBOM generation completed"
+            volumeMounts:
+            - name: sbom-storage
+              mountPath: /sbom-storage
+            resources:
+              limits:
+                cpu: 200m
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          volumes:
+          - name: sbom-storage
+            persistentVolumeClaim:
+              claimName: sbom-storage-pvc
+---
+# Supply Chain Attestation
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attestation-config
+  namespace: supply-chain-security
+data:
+  attestation-template.json: |
+    {
+      "_type": "https://in-toto.io/Statement/v0.1",
+      "predicateType": "https://slsa.dev/provenance/v0.2",
+      "subject": [
+        {
+          "name": "{{.image}}",
+          "digest": {
+            "sha256": "{{.digest}}"
+          }
+        }
+      ],
+      "predicate": {
+        "builder": {
+          "id": "https://github.com/metafunction/ci-cd-pipeline"
+        },
+        "buildType": "https://github.com/Attestations/GitHubActionsWorkflow@v1",
+        "invocation": {
+          "configSource": {
+            "uri": "{{.repo_uri}}",
+            "digest": {
+              "sha1": "{{.commit_sha}}"
+            },
+            "entryPoint": "{{.workflow}}"
+          },
+          "parameters": {
+            "inputs": {{.inputs}},
+            "vars": {{.vars}}
+          },
+          "environment": {
+            "github_actor": "{{.actor}}",
+            "github_sha": "{{.sha}}",
+            "github_ref": "{{.ref}}"
+          }
+        },
+        "buildConfig": {
+          "steps": {{.build_steps}}
+        },
+        "metadata": {
+          "buildInvocationId": "{{.run_id}}",
+          "buildStartedOn": "{{.started_at}}",
+          "buildFinishedOn": "{{.finished_at}}",
+          "completeness": {
+            "parameters": true,
+            "environment": true,
+            "materials": true
+          },
+          "reproducible": false
+        },
+        "materials": [
+          {
+            "uri": "{{.source_uri}}",
+            "digest": {
+              "sha1": "{{.source_sha}}"
+            }
+          }
+        ]
+      }
+    }
+---
+# Supply Chain Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supply-chain-dashboard
+  namespace: supply-chain-security
+data:
+  dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Supply Chain Security Dashboard",
+        "tags": ["supply-chain", "sbom", "vulnerabilities"],
+        "panels": [
+          {
+            "title": "SBOM Coverage",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(sbom_packages_total)",
+                "legendFormat": "Images with SBOM"
+              }
+            ]
+          },
+          {
+            "title": "Vulnerability Distribution",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum by (severity) (vulnerability_count)",
+                "legendFormat": "{{ severity }}"
+              }
+            ]
+          },
+          {
+            "title": "License Compliance",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "group by (license) (package_license_info)",
+                "format": "table"
+              }
+            ]
+          },
+          {
+            "title": "Base Image Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "count by (base_image) (container_base_image_info)",
+                "legendFormat": "{{ base_image }}"
+              }
+            ]
+          },
+          {
+            "title": "Supply Chain Policy Violations",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "increase(supply_chain_policy_violations_total[24h])",
+                "format": "table"
+              }
+            ]
+          }
+        ]
+      }
+    }
+---
+# Image Signing with Cosign
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-image-signing
+  namespace: supply-chain-security
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: cosign-setup
+        image: gcr.io/projectsigstore/cosign:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Setting up image signing with Cosign..."
+          
+          # Generate key pair for signing
+          if [ ! -f /signing-keys/cosign.key ]; then
+            echo "Generating Cosign key pair..."
+            cosign generate-key-pair --output-key-prefix=/signing-keys/cosign
+          fi
+          
+          echo "Cosign setup completed"
+          
+          # Verify setup
+          cosign public-key --key /signing-keys/cosign.pub
+        volumeMounts:
+        - name: signing-keys
+          mountPath: /signing-keys
+        env:
+        - name: COSIGN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cosign-secret
+              key: password
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+      volumes:
+      - name: signing-keys
+        secret:
+          secretName: cosign-keys
+---
+# Cosign Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cosign-secret
+  namespace: supply-chain-security
+type: Opaque
+stringData:
+  password: "your-cosign-password-here"
+---
+# Cosign Keys Secret (to be populated by the job)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cosign-keys
+  namespace: supply-chain-security
+type: Opaque
+data: {}
+---
+# Supply Chain Metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: supply-chain-monitor
+  namespace: supply-chain-security
+spec:
+  selector:
+    matchLabels:
+      app: sbom-generator
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+---
+# Supply Chain Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: supply-chain-alerts
+  namespace: supply-chain-security
+spec:
+  groups:
+  - name: supply-chain.rules
+    rules:
+    - alert: MissingSBOM
+      expr: |
+        (time() - sbom_last_generated_timestamp) > 86400
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "SBOM missing or outdated"
+        description: "SBOM for {{ $labels.image }} is missing or older than 24 hours"
+        
+    - alert: CriticalVulnerability
+      expr: |
+        vulnerability_count{severity="Critical"} > 0
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Critical vulnerability detected"
+        description: "{{ $value }} critical vulnerabilities found in {{ $labels.image }}"
+        
+    - alert: HighVulnerabilityCount
+      expr: |
+        vulnerability_count{severity="High"} > 10
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High number of vulnerabilities"
+        description: "{{ $value }} high-severity vulnerabilities found in {{ $labels.image }}"
+        
+    - alert: ProhibitedLicense
+      expr: |
+        package_license_violation > 0
+      for: 0m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Prohibited license detected"
+        description: "Prohibited license found in {{ $labels.package }} ({{ $labels.license }})"
+        
+    - alert: UntrustedRegistry
+      expr: |
+        registry_violation > 0
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Image from untrusted registry"
+        description: "Image {{ $labels.image }} is from untrusted registry {{ $labels.registry }}"

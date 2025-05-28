@@ -1,0 +1,1365 @@
+# Enterprise-Grade Log Management and SIEM Integration for MetaFunction
+# Comprehensive log aggregation, analysis, and security information management
+
+---
+# Logging Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    name: logging
+---
+# Elasticsearch Cluster for Enterprise Logging
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: metafunction-elasticsearch
+  namespace: logging
+spec:
+  version: 8.11.0
+  nodeSets:
+  - name: master-nodes
+    count: 3
+    config:
+      node.roles: ["master"]
+      cluster.initial_master_nodes: ["metafunction-elasticsearch-es-master-nodes-0", "metafunction-elasticsearch-es-master-nodes-1", "metafunction-elasticsearch-es-master-nodes-2"]
+      cluster.max_shards_per_node: 1000
+      indices.memory.index_buffer_size: 30%
+      indices.memory.min_index_buffer_size: 96mb
+      path.data: /usr/share/elasticsearch/data
+      path.logs: /usr/share/elasticsearch/logs
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1000m
+            limits:
+              memory: 4Gi
+              cpu: 2000m
+          env:
+          - name: ES_JAVA_OPTS
+            value: "-Xms2g -Xmx2g"
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+        storageClassName: fast-ssd
+  - name: data-nodes
+    count: 3
+    config:
+      node.roles: ["data", "ingest"]
+      cluster.max_shards_per_node: 1000
+      indices.memory.index_buffer_size: 30%
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            requests:
+              memory: 4Gi
+              cpu: 2000m
+            limits:
+              memory: 8Gi
+              cpu: 4000m
+          env:
+          - name: ES_JAVA_OPTS
+            value: "-Xms4g -Xmx4g"
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 500Gi
+        storageClassName: fast-ssd
+  - name: ml-nodes
+    count: 1
+    config:
+      node.roles: ["ml", "remote_cluster_client"]
+      xpack.ml.enabled: true
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1000m
+            limits:
+              memory: 4Gi
+              cpu: 2000m
+          env:
+          - name: ES_JAVA_OPTS
+            value: "-Xms2g -Xmx2g"
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Gi
+        storageClassName: fast-ssd
+  http:
+    tls:
+      selfSignedCertificate:
+        disabled: true
+  transport:
+    tls:
+      selfSignedCertificate:
+        disabled: true
+---
+# Kibana Instance
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: metafunction-kibana
+  namespace: logging
+spec:
+  version: 8.11.0
+  count: 2
+  elasticsearchRef:
+    name: metafunction-elasticsearch
+  config:
+    server.publicBaseUrl: "https://kibana.metafunction.com"
+    xpack.security.enabled: false
+    xpack.monitoring.enabled: true
+    logging.level: info
+    elasticsearch.requestTimeout: 60000
+    elasticsearch.shardTimeout: 30000
+  http:
+    service:
+      spec:
+        type: ClusterIP
+    tls:
+      selfSignedCertificate:
+        disabled: true
+  podTemplate:
+    spec:
+      containers:
+      - name: kibana
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+---
+# Logstash for Log Processing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: logging
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.11.0
+        ports:
+        - containerPort: 5044
+          name: beats
+        - containerPort: 9600
+          name: http
+        - containerPort: 5000
+          name: tcp
+        - containerPort: 5001
+          name: udp
+          protocol: UDP
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xmx2g -Xms2g"
+        - name: PIPELINE_WORKERS
+          value: "4"
+        - name: PIPELINE_BATCH_SIZE
+          value: "1000"
+        - name: PIPELINE_BATCH_DELAY
+          value: "50"
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1000m
+          limits:
+            memory: 4Gi
+            cpu: 2000m
+        volumeMounts:
+        - name: logstash-config
+          mountPath: /usr/share/logstash/pipeline/
+        - name: logstash-settings
+          mountPath: /usr/share/logstash/config/
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9600
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9600
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: logstash-config
+        configMap:
+          name: logstash-config
+      - name: logstash-settings
+        configMap:
+          name: logstash-settings
+---
+# Logstash Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: logging
+data:
+  metafunction.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+      
+      tcp {
+        port => 5000
+        codec => json
+      }
+      
+      udp {
+        port => 5001
+        codec => json
+      }
+      
+      # Kubernetes logs via Filebeat
+      beats {
+        port => 5045
+        type => "kubernetes"
+      }
+    }
+    
+    filter {
+      # Parse timestamp
+      date {
+        match => [ "timestamp", "ISO8601" ]
+        target => "@timestamp"
+      }
+      
+      # Add common fields
+      mutate {
+        add_field => { "[@metadata][cluster]" => "metafunction-prod" }
+        add_field => { "[@metadata][environment]" => "production" }
+      }
+      
+      # Kubernetes-specific processing
+      if [kubernetes] {
+        # Extract pod and container information
+        if [kubernetes][pod][name] {
+          mutate {
+            add_field => { "pod_name" => "%{[kubernetes][pod][name]}" }
+            add_field => { "namespace" => "%{[kubernetes][namespace]}" }
+            add_field => { "container_name" => "%{[kubernetes][container][name]}" }
+          }
+        }
+        
+        # Parse application logs
+        if [kubernetes][container][name] == "metafunction" {
+          # Parse JSON logs
+          if [message] =~ /^\{.*\}$/ {
+            json {
+              source => "message"
+            }
+          }
+          
+          # Extract stack traces
+          if [level] == "ERROR" and [message] =~ /Traceback/ {
+            mutate {
+              add_tag => ["exception", "requires_attention"]
+            }
+          }
+          
+          # Identify slow queries
+          if [duration] {
+            if [duration] > 5000 {
+              mutate {
+                add_tag => ["slow_query", "performance_issue"]
+              }
+            }
+          }
+        }
+      }
+      
+      # Security log processing
+      if [tags] and [tags] in ["security", "audit"] {
+        # Parse authentication attempts
+        if [message] =~ /authentication/ {
+          grok {
+            match => { "message" => "%{WORD:auth_result} authentication for user %{USER:username} from %{IP:source_ip}" }
+            add_tag => ["authentication"]
+          }
+        }
+        
+        # Parse authorization events
+        if [message] =~ /authorization/ {
+          grok {
+            match => { "message" => "%{WORD:authz_result} authorization for user %{USER:username} action %{WORD:action} resource %{NOTSPACE:resource}" }
+            add_tag => ["authorization"]
+          }
+        }
+        
+        # Detect suspicious patterns
+        if [source_ip] {
+          # Check for known malicious IPs (simplified)
+          if [source_ip] =~ /^10\.0\.0\./ {
+            mutate {
+              add_tag => ["internal_network"]
+            }
+          } else {
+            mutate {
+              add_tag => ["external_network", "review_required"]
+            }
+          }
+        }
+      }
+      
+      # Performance metrics processing
+      if [type] == "metrics" {
+        # Calculate percentiles for response times
+        if [response_time] {
+          if [response_time] > 1000 {
+            mutate {
+              add_tag => ["slow_response"]
+            }
+          }
+        }
+        
+        # Memory usage alerts
+        if [memory_usage_percent] {
+          if [memory_usage_percent] > 80 {
+            mutate {
+              add_tag => ["high_memory_usage", "alert"]
+            }
+          }
+        }
+      }
+      
+      # Business logic processing
+      if [kubernetes][container][name] == "metafunction" {
+        # Track API usage
+        if [endpoint] {
+          mutate {
+            add_field => { "api_endpoint" => "%{endpoint}" }
+          }
+        }
+        
+        # User behavior analysis
+        if [user_id] {
+          mutate {
+            add_field => { "user_session" => "%{user_id}-%{[kubernetes][pod][name]}" }
+          }
+        }
+        
+        # Error categorization
+        if [level] == "ERROR" {
+          if [message] =~ /database/ {
+            mutate {
+              add_tag => ["database_error"]
+            }
+          } else if [message] =~ /network/ {
+            mutate {
+              add_tag => ["network_error"]
+            }
+          } else if [message] =~ /timeout/ {
+            mutate {
+              add_tag => ["timeout_error"]
+            }
+          }
+        }
+      }
+      
+      # GeoIP enrichment for external IPs
+      if [source_ip] and [source_ip] !~ /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/ {
+        geoip {
+          source => "source_ip"
+          target => "geoip"
+        }
+      }
+      
+      # Remove sensitive data
+      mutate {
+        remove_field => ["password", "token", "api_key", "secret"]
+      }
+    }
+    
+    output {
+      # Primary output to Elasticsearch
+      elasticsearch {
+        hosts => ["metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200"]
+        index => "metafunction-logs-%{+YYYY.MM.dd}"
+        template_name => "metafunction"
+        template => "/usr/share/logstash/templates/metafunction-template.json"
+        template_overwrite => true
+      }
+      
+      # Security events to dedicated index
+      if [tags] and [tags] in ["security", "audit", "authentication", "authorization"] {
+        elasticsearch {
+          hosts => ["metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200"]
+          index => "metafunction-security-%{+YYYY.MM.dd}"
+        }
+      }
+      
+      # Performance metrics to dedicated index
+      if [type] == "metrics" {
+        elasticsearch {
+          hosts => ["metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200"]
+          index => "metafunction-metrics-%{+YYYY.MM.dd}"
+        }
+      }
+      
+      # Critical errors to alert index
+      if [level] == "ERROR" or [tags] and [tags] in ["exception", "alert"] {
+        elasticsearch {
+          hosts => ["metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200"]
+          index => "metafunction-alerts-%{+YYYY.MM.dd}"
+        }
+      }
+      
+      # Debug output (can be disabled in production)
+      if [@metadata][debug] {
+        stdout {
+          codec => rubydebug
+        }
+      }
+    }
+---
+# Logstash Settings
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-settings
+  namespace: logging
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    path.logs: /usr/share/logstash/logs
+    pipeline.workers: 4
+    pipeline.batch.size: 1000
+    pipeline.batch.delay: 50
+    queue.type: persisted
+    queue.max_bytes: 1gb
+    queue.checkpoint.writes: 1024
+    dead_letter_queue.enable: true
+    monitoring.enabled: true
+    monitoring.elasticsearch.hosts: ["metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200"]
+    xpack.monitoring.enabled: true
+    log.level: info
+    slowlog.threshold.warn: 2s
+    slowlog.threshold.info: 1s
+    slowlog.threshold.debug: 500ms
+    slowlog.threshold.trace: 100ms
+  
+  pipelines.yml: |
+    - pipeline.id: metafunction
+      path.config: "/usr/share/logstash/pipeline/metafunction.conf"
+      pipeline.workers: 4
+      pipeline.batch.size: 1000
+      pipeline.batch.delay: 50
+      queue.type: persisted
+      queue.max_bytes: 512mb
+---
+# Logstash Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: logging
+  labels:
+    app: logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+  - name: beats
+    port: 5044
+    targetPort: 5044
+  - name: tcp
+    port: 5000
+    targetPort: 5000
+  - name: udp
+    port: 5001
+    targetPort: 5001
+    protocol: UDP
+  - name: http
+    port: 9600
+    targetPort: 9600
+  type: ClusterIP
+---
+# Advanced Filebeat Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: logging
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+    # Kubernetes container logs
+    - type: kubernetes
+      node: ${NODE_NAME}
+      hints.enabled: true
+      hints.default_config:
+        type: container
+        paths:
+          - /var/log/containers/*${data.kubernetes.container.id}.log
+    
+    # Audit logs
+    - type: log
+      paths:
+        - /var/log/audit/*.log
+      fields:
+        logtype: audit
+      fields_under_root: true
+      multiline.pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+      multiline.negate: true
+      multiline.match: after
+    
+    # System logs
+    - type: log
+      paths:
+        - /var/log/syslog
+        - /var/log/messages
+      fields:
+        logtype: system
+      fields_under_root: true
+    
+    # Application-specific logs
+    - type: log
+      paths:
+        - /var/log/containers/*metafunction*.log
+      json.keys_under_root: true
+      json.add_error_key: true
+      fields:
+        logtype: application
+        service: metafunction
+      fields_under_root: true
+      multiline.pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+      multiline.negate: true
+      multiline.match: after
+    
+    # Nginx/Kong logs
+    - type: log
+      paths:
+        - /var/log/containers/*kong*.log
+        - /var/log/containers/*nginx*.log
+      fields:
+        logtype: gateway
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+    
+    processors:
+    - add_kubernetes_metadata:
+        host: ${NODE_NAME}
+        matchers:
+        - logs_path:
+            logs_path: "/var/log/containers/"
+    
+    - add_docker_metadata:
+        host: "unix:///var/run/docker.sock"
+    
+    - add_host_metadata:
+        when.not.contains.tags: forwarded
+    
+    - add_cloud_metadata: ~
+    
+    - add_fields:
+        target: ''
+        fields:
+          cluster_name: metafunction-prod
+          environment: production
+    
+    - drop_fields:
+        fields: ["beat", "input", "prospector", "offset"]
+        ignore_missing: true
+    
+    # Security processing
+    - script:
+        lang: javascript
+        source: >
+          function process(event) {
+            var message = event.Get("message");
+            if (message) {
+              // Detect potential security events
+              if (message.includes("authentication failed") || 
+                  message.includes("unauthorized") ||
+                  message.includes("permission denied")) {
+                event.Put("security_event", true);
+                event.AppendTo("tags", "security");
+              }
+              
+              // Detect errors
+              if (message.includes("ERROR") || message.includes("FATAL")) {
+                event.Put("log_level", "error");
+                event.AppendTo("tags", "error");
+              }
+              
+              // Detect performance issues
+              if (message.includes("timeout") || message.includes("slow")) {
+                event.AppendTo("tags", "performance");
+              }
+            }
+          }
+    
+    output.logstash:
+      hosts: ['logstash.logging.svc.cluster.local:5044']
+      compression_level: 3
+      bulk_max_size: 2048
+      template.settings:
+        index.number_of_shards: 1
+        index.number_of_replicas: 1
+    
+    setup.template.enabled: true
+    setup.template.settings:
+      index.number_of_shards: 2
+      index.number_of_replicas: 1
+    
+    setup.ilm.enabled: true
+    setup.ilm.rollover_alias: "filebeat"
+    setup.ilm.policy: "filebeat-policy"
+    
+    logging.level: info
+    logging.to_files: true
+    logging.files:
+      path: /var/log/filebeat
+      name: filebeat
+      keepfiles: 7
+      permissions: 0644
+---
+# Enhanced Filebeat DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: logging
+  labels:
+    app: filebeat
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      serviceAccountName: filebeat
+      terminationGracePeriodSeconds: 30
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: filebeat
+        image: docker.elastic.co/beats/filebeat:8.11.0
+        args: [
+          "-c", "/etc/filebeat.yml",
+          "-e",
+        ]
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: CLUSTER_NAME
+          value: "metafunction-prod"
+        securityContext:
+          runAsUser: 0
+          capabilities:
+            add:
+            - DAC_READ_SEARCH
+        resources:
+          limits:
+            memory: 500Mi
+            cpu: 500m
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/filebeat.yml
+          readOnly: true
+          subPath: filebeat.yml
+        - name: data
+          mountPath: /usr/share/filebeat/data
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: dockersock
+          mountPath: /var/run/docker.sock
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          defaultMode: 0640
+          name: filebeat-config
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: data
+        hostPath:
+          path: /var/lib/filebeat-data
+          type: DirectoryOrCreate
+      - name: dockersock
+        hostPath:
+          path: /var/run/docker.sock
+---
+# Filebeat ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filebeat
+  namespace: logging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat
+rules:
+- apiGroups: [""]
+  resources:
+  - namespaces
+  - nodes
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources:
+  - replicasets
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat
+subjects:
+- kind: ServiceAccount
+  name: filebeat
+  namespace: logging
+roleRef:
+  kind: ClusterRole
+  name: filebeat
+  apiGroup: rbac.authorization.k8s.io
+---
+# SIEM Integration with Wazuh
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wazuh-manager
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-manager
+  template:
+    metadata:
+      labels:
+        app: wazuh-manager
+    spec:
+      containers:
+      - name: wazuh-manager
+        image: wazuh/wazuh-manager:4.7.0
+        ports:
+        - containerPort: 1514
+          name: syslog
+        - containerPort: 1515
+          name: agents
+        - containerPort: 514
+          name: syslog-udp
+          protocol: UDP
+        - containerPort: 55000
+          name: api
+        env:
+        - name: WAZUH_MANAGER_IP
+          value: "0.0.0.0"
+        - name: WAZUH_CLUSTER_NODE_TYPE
+          value: "master"
+        - name: WAZUH_CLUSTER_NODE_NAME
+          value: "master-node"
+        - name: WAZUH_CLUSTER_KEY
+          value: "metafunction-cluster-key"
+        - name: WAZUH_CLUSTER_NODES
+          value: "wazuh-manager"
+        - name: WAZUH_CLUSTER_DISABLED
+          value: "false"
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+        volumeMounts:
+        - name: wazuh-config
+          mountPath: /var/ossec/etc/ossec.conf
+          subPath: ossec.conf
+        - name: wazuh-rules
+          mountPath: /var/ossec/etc/rules/local_rules.xml
+          subPath: local_rules.xml
+        - name: wazuh-data
+          mountPath: /var/ossec/data
+        - name: wazuh-logs
+          mountPath: /var/ossec/logs
+      volumes:
+      - name: wazuh-config
+        configMap:
+          name: wazuh-config
+      - name: wazuh-rules
+        configMap:
+          name: wazuh-rules
+      - name: wazuh-data
+        persistentVolumeClaim:
+          claimName: wazuh-data
+      - name: wazuh-logs
+        persistentVolumeClaim:
+          claimName: wazuh-logs
+---
+# Wazuh Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-config
+  namespace: logging
+data:
+  ossec.conf: |
+    <ossec_config>
+      <global>
+        <jsonout_output>yes</jsonout_output>
+        <alerts_log>yes</alerts_log>
+        <logall>no</logall>
+        <logall_json>no</logall_json>
+        <email_notification>no</email_notification>
+        <smtp_server>localhost</smtp_server>
+        <email_from>wazuh@metafunction.com</email_from>
+        <email_to>security@metafunction.com</email_to>
+        <hostname>wazuh-manager</hostname>
+        <email_maxperhour>12</email_maxperhour>
+        <email_log_source>alerts.log</email_log_source>
+      </global>
+      
+      <rules>
+        <include>rules_config.xml</include>
+        <include>pam_rules.xml</include>
+        <include>sshd_rules.xml</include>
+        <include>telnetd_rules.xml</include>
+        <include>syslog_rules.xml</include>
+        <include>arpwatch_rules.xml</include>
+        <include>symantec-av_rules.xml</include>
+        <include>symantec-ws_rules.xml</include>
+        <include>pix_rules.xml</include>
+        <include>named_rules.xml</include>
+        <include>smbd_rules.xml</include>
+        <include>vsftpd_rules.xml</include>
+        <include>pure-ftpd_rules.xml</include>
+        <include>proftpd_rules.xml</include>
+        <include>ms_ftpd_rules.xml</include>
+        <include>ftpd_rules.xml</include>
+        <include>hordeimp_rules.xml</include>
+        <include>roundcube_rules.xml</include>
+        <include>wordpress_rules.xml</include>
+        <include>cimserver_rules.xml</include>
+        <include>vpopmail_rules.xml</include>
+        <include>vmpop3d_rules.xml</include>
+        <include>courier_rules.xml</include>
+        <include>web_rules.xml</include>
+        <include>web_appsec_rules.xml</include>
+        <include>apache_rules.xml</include>
+        <include>nginx_rules.xml</include>
+        <include>php_rules.xml</include>
+        <include>mysql_rules.xml</include>
+        <include>postgresql_rules.xml</include>
+        <include>ids_rules.xml</include>
+        <include>squid_rules.xml</include>
+        <include>firewall_rules.xml</include>
+        <include>cisco-ios_rules.xml</include>
+        <include>netscreenfw_rules.xml</include>
+        <include>sonicwall_rules.xml</include>
+        <include>postfix_rules.xml</include>
+        <include>sendmail_rules.xml</include>
+        <include>imapd_rules.xml</include>
+        <include>mailscanner_rules.xml</include>
+        <include>dovecot_rules.xml</include>
+        <include>ms-exchange_rules.xml</include>
+        <include>racoon_rules.xml</include>
+        <include>vpn_concentrator_rules.xml</include>
+        <include>spamd_rules.xml</include>
+        <include>msauth_rules.xml</include>
+        <include>mcafee_av_rules.xml</include>
+        <include>trend-osce_rules.xml</include>
+        <include>ms-se_rules.xml</include>
+        <include>zeus_rules.xml</include>
+        <include>solaris_bsm_rules.xml</include>
+        <include>vmware_rules.xml</include>
+        <include>ms_dhcp_rules.xml</include>
+        <include>asterisk_rules.xml</include>
+        <include>ossec_rules.xml</include>
+        <include>attack_rules.xml</include>
+        <include>local_rules.xml</include>
+      </rules>
+      
+      <syscheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+        <scan_on_start>yes</scan_on_start>
+        <auto_ignore frequency="10" timeframe="3600">no</auto_ignore>
+        <directories check_all="yes" whodata="yes">/etc,/usr/bin,/usr/sbin</directories>
+        <directories check_all="yes" whodata="yes">/bin,/sbin,/boot</directories>
+        <ignore>/etc/mtab</ignore>
+        <ignore>/etc/hosts.deny</ignore>
+        <ignore>/etc/mail/statistics</ignore>
+        <ignore>/etc/random-seed</ignore>
+        <ignore>/etc/random.seed</ignore>
+        <ignore>/etc/adjtime</ignore>
+        <ignore>/etc/httpd/logs</ignore>
+        <ignore>/etc/utmpx</ignore>
+        <ignore>/etc/wtmpx</ignore>
+        <ignore>/etc/cups/certs</ignore>
+        <ignore>/etc/dumpdates</ignore>
+        <ignore>/etc/svc/volatile</ignore>
+        <nodiff>/etc/ssl/private.key</nodiff>
+        <skip_nfs>yes</skip_nfs>
+        <skip_dev>yes</skip_dev>
+        <skip_proc>yes</skip_proc>
+        <skip_sys>yes</skip_sys>
+        <process_priority>10</process_priority>
+        <max_eps>200</max_eps>
+        <sync_enabled>yes</sync_enabled>
+        <sync_interval>300</sync_interval>
+        <sync_max_interval>3600</sync_max_interval>
+        <sync_response_timeout>30</sync_response_timeout>
+      </syscheck>
+      
+      <rootcheck>
+        <disabled>no</disabled>
+        <check_files>yes</check_files>
+        <check_trojans>yes</check_trojans>
+        <check_dev>yes</check_dev>
+        <check_sys>yes</check_sys>
+        <check_pids>yes</check_pids>
+        <check_ports>yes</check_ports>
+        <check_if>yes</check_if>
+        <frequency>43200</frequency>
+        <rootkit_files>/var/ossec/etc/shared/rootkit_files.txt</rootkit_files>
+        <rootkit_trojans>/var/ossec/etc/shared/rootkit_trojans.txt</rootkit_trojans>
+        <system_audit>/var/ossec/etc/shared/system_audit_rcl.txt</system_audit>
+        <system_audit>/var/ossec/etc/shared/system_audit_ssh.txt</system_audit>
+        <system_audit>/var/ossec/etc/shared/cis_debian_linux_rcl.txt</system_audit>
+        <skip_nfs>yes</skip_nfs>
+      </rootcheck>
+      
+      <global>
+        <white_list>127.0.0.1</white_list>
+        <white_list>^localhost.localdomain$</white_list>
+        <white_list>127.0.0.53</white_list>
+        <white_list>10.0.0.0/8</white_list>
+        <white_list>172.16.0.0/12</white_list>
+        <white_list>192.168.0.0/16</white_list>
+      </global>
+      
+      <remote>
+        <connection>syslog</connection>
+        <port>514</port>
+        <protocol>udp</protocol>
+        <allowed-ips>0.0.0.0/0</allowed-ips>
+      </remote>
+      
+      <remote>
+        <connection>secure</connection>
+        <port>1514</port>
+        <protocol>tcp</protocol>
+        <allowed-ips>0.0.0.0/0</allowed-ips>
+      </remote>
+      
+      <alerts>
+        <log_alert_level>3</log_alert_level>
+        <email_alert_level>12</email_alert_level>
+      </alerts>
+      
+      <command>
+        <name>disable-account</name>
+        <executable>disable-account</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      
+      <command>
+        <name>restart-wazuh</name>
+        <executable>restart-wazuh</executable>
+      </command>
+      
+      <command>
+        <name>firewall-drop</name>
+        <executable>firewall-drop</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      
+      <command>
+        <name>host-deny</name>
+        <executable>host-deny</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      
+      <command>
+        <name>route-null</name>
+        <executable>route-null</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      
+      <active-response>
+        <disabled>no</disabled>
+        <command>host-deny</command>
+        <location>local</location>
+        <rules_id>5720</rules_id>
+        <timeout>600</timeout>
+      </active-response>
+      
+      <active-response>
+        <disabled>no</disabled>
+        <command>firewall-drop</command>
+        <location>local</location>
+        <rules_id>5720</rules_id>
+        <timeout>600</timeout>
+      </active-response>
+      
+      <localfile>
+        <log_format>command</log_format>
+        <command>df -P</command>
+        <frequency>360</frequency>
+      </localfile>
+      
+      <localfile>
+        <log_format>full_command</log_format>
+        <command>netstat -tulpn | sed 's/\([[:alnum:]]\+\)\ \+[[:digit:]]\+\ \+[[:digit:]]\+\ \+\(.*\):\([[:digit:]]*\)\ \+\(.*\):\([[:digit:]]*\)\ \+\([[:alpha:]]*\)\ \+\([[:digit:]]*\/[[:alnum:]\-]*\).*/\1 \2 \3 \4 \5 \6 \7/' | sort -k 6 -g</command>
+        <alias>netstat listening ports</alias>
+        <frequency>360</frequency>
+      </localfile>
+      
+      <localfile>
+        <log_format>full_command</log_format>
+        <command>last -n 20</command>
+        <frequency>360</frequency>
+      </localfile>
+      
+      <ruleset>
+        <decoder_dir>ruleset/decoders</decoder_dir>
+        <rule_dir>ruleset/rules</rule_dir>
+        <rule_exclude>0215-policy_rules.xml</rule_exclude>
+        <list>etc/lists/audit-keys</list>
+        <list>etc/lists/amazon/aws-eventnames</list>
+        <list>etc/lists/security-eventchannel</list>
+      </ruleset>
+      
+      <rule_test>
+        <enabled>yes</enabled>
+        <threads>1</threads>
+        <max_sessions>64</max_sessions>
+        <session_timeout>15m</session_timeout>
+      </rule_test>
+      
+      <auth>
+        <disabled>no</disabled>
+        <port>1515</port>
+        <use_source_ip>no</use_source_ip>
+        <purge>yes</purge>
+        <use_password>no</use_password>
+        <ciphers>HIGH:!ADH:!EXP:!MD5:!RC4:!3DES:!CAMELLIA:@STRENGTH</ciphers>
+        <ssl_agent_ca></ssl_agent_ca>
+        <ssl_verify_host>no</ssl_verify_host>
+        <ssl_manager_cert>/var/ossec/etc/sslmanager.cert</ssl_manager_cert>
+        <ssl_manager_key>/var/ossec/etc/sslmanager.key</ssl_manager_key>
+        <ssl_auto_negotiate>no</ssl_auto_negotiate>
+      </auth>
+      
+      <cluster>
+        <name>wazuh</name>
+        <node_name>master-node</node_name>
+        <node_type>master</node_type>
+        <key>metafunction-cluster-key</key>
+        <port>1516</port>
+        <bind_addr>0.0.0.0</bind_addr>
+        <nodes>
+          <node>wazuh-manager</node>
+        </nodes>
+        <hidden>no</hidden>
+        <disabled>no</disabled>
+      </cluster>
+      
+    </ossec_config>
+---
+# Wazuh Custom Rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-rules
+  namespace: logging
+data:
+  local_rules.xml: |
+    <group name="metafunction,">
+      
+      <!-- MetaFunction Application Rules -->
+      <rule id="100001" level="3">
+        <if_sid>1002</if_sid>
+        <match>metafunction</match>
+        <description>MetaFunction application log</description>
+        <group>metafunction,</group>
+      </rule>
+      
+      <rule id="100002" level="7">
+        <if_sid>100001</if_sid>
+        <match>ERROR</match>
+        <description>MetaFunction application error</description>
+        <group>metafunction,application_error,</group>
+      </rule>
+      
+      <rule id="100003" level="12">
+        <if_sid>100002</if_sid>
+        <match>CRITICAL|FATAL</match>
+        <description>MetaFunction critical application error</description>
+        <group>metafunction,critical_error,</group>
+      </rule>
+      
+      <!-- Authentication Rules -->
+      <rule id="100010" level="5">
+        <if_sid>100001</if_sid>
+        <regex>authentication.*failed</regex>
+        <description>MetaFunction authentication failure</description>
+        <group>metafunction,authentication_failed,</group>
+      </rule>
+      
+      <rule id="100011" level="10">
+        <if_sid>100010</if_sid>
+        <same_source_ip />
+        <description>MetaFunction multiple authentication failures from same source</description>
+        <group>metafunction,authentication_failures,attack,</group>
+      </rule>
+      
+      <!-- Database Rules -->
+      <rule id="100020" level="7">
+        <if_sid>100001</if_sid>
+        <regex>database.*connection.*failed</regex>
+        <description>MetaFunction database connection failure</description>
+        <group>metafunction,database_error,</group>
+      </rule>
+      
+      <rule id="100021" level="5">
+        <if_sid>100001</if_sid>
+        <regex>slow.*query</regex>
+        <description>MetaFunction slow database query detected</description>
+        <group>metafunction,performance,database,</group>
+      </rule>
+      
+      <!-- Security Rules -->
+      <rule id="100030" level="10">
+        <if_sid>100001</if_sid>
+        <regex>suspicious.*activity|potential.*attack|security.*violation</regex>
+        <description>MetaFunction suspicious security activity</description>
+        <group>metafunction,security_violation,</group>
+      </rule>
+      
+      <rule id="100031" level="12">
+        <if_sid>100001</if_sid>
+        <regex>unauthorized.*access|privilege.*escalation</regex>
+        <description>MetaFunction unauthorized access attempt</description>
+        <group>metafunction,unauthorized_access,attack,</group>
+      </rule>
+      
+      <!-- API Rules -->
+      <rule id="100040" level="3">
+        <if_sid>100001</if_sid>
+        <regex>api.*request</regex>
+        <description>MetaFunction API request</description>
+        <group>metafunction,api,</group>
+      </rule>
+      
+      <rule id="100041" level="7">
+        <if_sid>100040</if_sid>
+        <regex>rate.*limit.*exceeded</regex>
+        <description>MetaFunction API rate limit exceeded</description>
+        <group>metafunction,api,rate_limit,</group>
+      </rule>
+      
+      <rule id="100042" level="5">
+        <if_sid>100040</if_sid>
+        <regex>4[0-9][0-9]|5[0-9][0-9]</regex>
+        <description>MetaFunction API error response</description>
+        <group>metafunction,api,error_response,</group>
+      </rule>
+      
+      <!-- Performance Rules -->
+      <rule id="100050" level="5">
+        <if_sid>100001</if_sid>
+        <regex>high.*memory.*usage|memory.*leak</regex>
+        <description>MetaFunction high memory usage detected</description>
+        <group>metafunction,performance,memory,</group>
+      </rule>
+      
+      <rule id="100051" level="5">
+        <if_sid>100001</if_sid>
+        <regex>high.*cpu.*usage|cpu.*spike</regex>
+        <description>MetaFunction high CPU usage detected</description>
+        <group>metafunction,performance,cpu,</group>
+      </rule>
+      
+      <rule id="100052" level="7">
+        <if_sid>100001</if_sid>
+        <regex>timeout|request.*timeout</regex>
+        <description>MetaFunction request timeout</description>
+        <group>metafunction,performance,timeout,</group>
+      </rule>
+      
+      <!-- Kubernetes Rules -->
+      <rule id="100060" level="5">
+        <if_sid>100001</if_sid>
+        <regex>pod.*restart|container.*restart</regex>
+        <description>MetaFunction pod/container restart detected</description>
+        <group>metafunction,kubernetes,restart,</group>
+      </rule>
+      
+      <rule id="100061" level="7">
+        <if_sid>100060</if_sid>
+        <same_source_ip />
+        <description>MetaFunction frequent pod/container restarts</description>
+        <group>metafunction,kubernetes,multiple_restarts,</group>
+      </rule>
+      
+      <!-- Business Logic Rules -->
+      <rule id="100070" level="3">
+        <if_sid>100001</if_sid>
+        <regex>function.*execution</regex>
+        <description>MetaFunction function execution</description>
+        <group>metafunction,business_logic,</group>
+      </rule>
+      
+      <rule id="100071" level="7">
+        <if_sid>100070</if_sid>
+        <regex>function.*failed|execution.*error</regex>
+        <description>MetaFunction function execution failure</description>
+        <group>metafunction,business_logic,execution_error,</group>
+      </rule>
+      
+    </group>
+---
+# Wazuh PVCs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wazuh-data
+  namespace: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wazuh-logs
+  namespace: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+# Wazuh Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-manager
+  namespace: logging
+  labels:
+    app: wazuh-manager
+spec:
+  selector:
+    app: wazuh-manager
+  ports:
+  - name: agents
+    port: 1514
+    targetPort: 1514
+  - name: registration
+    port: 1515
+    targetPort: 1515
+  - name: syslog-udp
+    port: 514
+    targetPort: 514
+    protocol: UDP
+  - name: api
+    port: 55000
+    targetPort: 55000
+  type: ClusterIP
+---
+# Log Rotation CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: log-rotation
+  namespace: logging
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: log-rotator
+            image: curlimages/curl:8.4.0
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting log rotation..."
+              
+              # Rotate Elasticsearch indices older than 30 days
+              curl -X DELETE "metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200/metafunction-logs-$(date -d '30 days ago' '+%Y.%m.%d')"
+              curl -X DELETE "metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200/metafunction-security-$(date -d '30 days ago' '+%Y.%m.%d')"
+              curl -X DELETE "metafunction-elasticsearch-es-http.logging.svc.cluster.local:9200/metafunction-metrics-$(date -d '7 days ago' '+%Y.%m.%d')"
+              
+              # Archive old indices to S3 (if configured)
+              # This would require additional tools and configuration
+              
+              echo "Log rotation completed."
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+          restartPolicy: OnFailure
