@@ -9,7 +9,7 @@ openai==1.5.0
 # PDF processing
 pdfplumber==0.7.5
 PyMuPDF==1.19.6
-pdfminer.six==20211012
+pdfminer.six==20250506
 
 # For OCR capabilities (optional)
 pytesseract==0.3.8
