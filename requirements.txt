@@ -1,5 +1,5 @@
 # Basic requirements
-flask==2.0.1
+flask==3.1.1
 python-dotenv==0.19.0
 requests==2.26.0
 beautifulsoup4==4.10.0
