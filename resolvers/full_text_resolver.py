@@ -851,7 +851,7 @@ def fetch_aacr_fulltext(doi):
             ]
 
             for pdf_url in pdf_urls:
-                from utils.pdf_extractor import extract_text_from_pdf_url
+                from resolvers.pdf_extractor import extract_text_from_pdf_url
 
                 text = extract_text_from_pdf_url(pdf_url)
                 if text:
@@ -1035,7 +1035,7 @@ def resolve_full_text(pmid=None, doi=None, title=None):
     # Try SciHub as a last resort (where legal)
     if doi:
         try:
-            from utils.scihub import fetch_from_scihub
+            from resolvers.scihub import fetch_from_scihub
 
             fetch_from_source(lambda d: fetch_from_scihub(d), "SciHub", doi)
         except ImportError:
@@ -1043,7 +1043,7 @@ def resolve_full_text(pmid=None, doi=None, title=None):
 
     # Try institutional access as another option
     try:
-        from utils.institutional_access import InstitutionalAccessManager
+        from resolvers.institutional_access import InstitutionalAccessManager
 
         try:
             iam = InstitutionalAccessManager()
@@ -1061,7 +1061,7 @@ def resolve_full_text(pmid=None, doi=None, title=None):
     # After trying all standard methods, if no full text was found but we have a PDF URL:
     if pdf_url and not any(is_ft for _, _, is_ft in results):
         try:
-            from utils.browser_pdf_extractor import extract_pdf_with_browser
+            from resolvers.browser_pdf_extractor import extract_pdf_with_browser
 
             browser_text = extract_pdf_with_browser(pdf_url)
             if browser_text:

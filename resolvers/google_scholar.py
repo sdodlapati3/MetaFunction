@@ -100,7 +100,7 @@ def get_fulltext_via_google_scholar(title, doi=None):
 
             if is_likely_open:
                 # Try to extract text from the PDF
-                from utils.pdf_extractor import extract_text_from_pdf_url
+                from resolvers.pdf_extractor import extract_text_from_pdf_url
 
                 pdf_text = extract_text_from_pdf_url(pdf_link)
                 if pdf_text and len(pdf_text) > 1000:
@@ -111,7 +111,7 @@ def get_fulltext_via_google_scholar(title, doi=None):
 
             # If extraction failed, try browser method
             try:
-                from utils.browser_pdf_extractor import extract_pdf_with_browser
+                from resolvers.browser_pdf_extractor import extract_pdf_with_browser
 
                 browser_text = extract_pdf_with_browser(pdf_link)
                 if browser_text and len(browser_text) > 1000:

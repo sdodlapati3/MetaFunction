@@ -201,7 +201,7 @@ def extract_text_with_institutional_access(doi, institution_key="odu"):
 
                     # Current URL might now be PDF
                     if driver.current_url.endswith(".pdf"):
-                        from utils.pdf_extractor import extract_text_from_pdf_url
+                        from resolvers.pdf_extractor import extract_text_from_pdf_url
 
                         return extract_text_from_pdf_url(driver.current_url)
             except Exception as e:

@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import re
 import time
 import random
-from utils.pdf_extractor import (
+from resolvers.pdf_extractor import (
     extract_text_from_pdf_bytes,
     extract_text_with_external_tools,
 )

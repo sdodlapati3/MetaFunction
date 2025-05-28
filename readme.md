@@ -1,34 +1,145 @@
-# MetaFunction
+# 🧬 MetaFunction
 
-MetaFunction is a Flask-based web application for AI-powered summarization and content extraction of scientific papers. It supports querying by DOI, PMID, or title and integrates with multiple backend models (OpenAI, Deepseek, Perplexity). Its modular design cleanly separates fetch/parsing logic and the web interface.
+<div align="center">
 
-## Features
+**AI-Powered Scientific Paper Analysis & Summarization Platform**
 
-- Summarize papers via DOI, PMID, or title lookup  
-- Fetch full-text HTML or PDF from multiple sources  
-- Switchable AI backends: OpenAI, Deepseek, Perplexity  
-- Extensible resolver framework in `utils/`  
-- Simple web interface built on Flask  
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code Style](https://img.shields.io/badge/Code%20Style-Black-black.svg)](https://black.readthedocs.io/)
 
-## Prerequisites
+*Transform scientific literature into actionable insights with cutting-edge AI*
 
-- Python 3.8 or later  
-- `git` and `pip` installed  
+[🚀 Quick Start](#-quick-start) • [📖 Documentation](#-documentation) • [🔧 API Reference](#-api-reference) • [🤝 Contributing](#-contributing)
 
-## Installation
+</div>
 
-1. **Clone the repository**  
-   ```bash
-   git clone https://github.com/SanjeevaRDodlapati/MetaFunction.git
-   cd MetaFunction
-   ```
+---
 
-2. **Create and activate a virtual environment**  
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate   # macOS/Linux
-   .\.venv\Scripts\activate    # Windows
-   ```
+## ✨ Overview
+
+MetaFunction is a sophisticated Flask-based platform that revolutionizes how researchers interact with scientific literature. By combining advanced paper resolution capabilities with multiple AI backends, it provides intelligent summarization and analysis of academic papers through simple queries.
+
+### 🎯 Key Features
+
+- **🔍 Multi-Modal Paper Resolution**: Search by DOI, PMID, arXiv ID, or paper title
+- **🤖 AI-Powered Analysis**: Integration with OpenAI, DeepSeek, and Perplexity models
+- **📄 Full-Text Extraction**: Advanced PDF processing and institutional access
+- **🌐 Web Interface**: Clean, responsive UI for researchers
+- **🔧 REST API**: Programmatic access for automation and integration
+- **📊 Comprehensive Logging**: Detailed analytics and usage tracking
+- **🏗️ Modular Architecture**: Clean separation of concerns for maintainability
+
+## 🏛️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Web Interface │    │    REST API     │    │   AI Services   │
+│                 │    │                 │    │                 │
+│  • Flask Routes │◄──►│  • Endpoints    │◄──►│  • OpenAI       │
+│  • Templates    │    │  • Validation   │    │  • DeepSeek     │
+│  • Static Assets│    │  • Serialization│    │  • Perplexity   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Core Services Layer                        │
+│                                                                 │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐      │
+│  │ Paper Service │  │  AI Service   │  │Logging Service│      │
+│  │               │  │               │  │               │      │
+│  │• Resolution   │  │• Model Mgmt   │  │• Structured   │      │
+│  │• Validation   │  │• API Clients  │  │• Analytics    │      │
+│  │• Caching      │  │• Load Balance │  │• Monitoring   │      │
+│  └───────────────┘  └───────────────┘  └───────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Resolution Layer                             │
+│                                                                 │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────┐│
+│  │   PubMed     │ │    DOI       │ │ Institutional│ │ SciHub ││
+│  │   Resolver   │ │   Resolver   │ │   Access     │ │Resolver││
+│  │              │ │              │ │              │ │        ││
+│  │• PMC Access  │ │• CrossRef    │ │• Proxy Support│ │• Backup││
+│  │• Metadata    │ │• Publisher   │ │• Multi-Inst   │ │• Ethics││
+│  │• Full-text   │ │• Standards   │ │• Auth Methods │ │• Limits││
+│  └──────────────┘ └──────────────┘ └──────────────┘ └────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 📁 Project Structure
+
+```
+MetaFunction/
+├── 🏗️  Core Application
+│   ├── app/                           # Main application package
+│   │   ├── __init__.py               # Package initialization
+│   │   ├── main.py                   # Flask app factory
+│   │   ├── config.py                 # Environment configuration
+│   │   ├── clients/                  # AI API clients
+│   │   │   ├── base_client.py        # Base client interface
+│   │   │   ├── openai_client.py      # OpenAI integration
+│   │   │   ├── deepseek_client.py    # DeepSeek integration
+│   │   │   └── perplexity_client.py  # Perplexity integration
+│   │   ├── routes/                   # Request handlers
+│   │   │   ├── web.py               # Web interface routes
+│   │   │   └── api.py               # REST API endpoints
+│   │   ├── services/                 # Business logic
+│   │   │   ├── ai_service.py        # AI model orchestration
+│   │   │   ├── paper_service.py     # Paper resolution logic
+│   │   │   └── logging_service.py   # Structured logging
+│   │   └── utils/                    # Shared utilities
+│   │       ├── exceptions.py        # Custom exception classes
+│   │       └── validators.py        # Input validation
+│   │
+├── 🔍 Paper Resolution
+│   ├── resolvers/                    # Paper content resolution
+│   │   ├── full_text_resolver.py    # Main resolution orchestrator
+│   │   ├── pdf_extractor.py         # PDF text extraction
+│   │   ├── institutional_access.py  # Institutional proxy access
+│   │   ├── browser_pdf_extractor.py # Browser-based extraction
+│   │   ├── google_scholar.py        # Google Scholar integration
+│   │   └── scihub.py               # SciHub access (ethical use)
+│   │
+├── 🌐 User Interface
+│   ├── templates/                    # Jinja2 templates
+│   │   ├── index.html               # Main interface
+│   │   ├── test_sources.html        # Source testing
+│   │   ├── admin/                   # Admin interface
+│   │   └── components/              # Reusable components
+│   ├── static/                       # Static assets
+│   │   ├── css/                     # Stylesheets
+│   │   ├── js/                      # JavaScript
+│   │   └── images/                  # Images and icons
+│   │
+├── 🧪 Testing & Development
+│   ├── tests/                        # Comprehensive test suite
+│   │   ├── conftest.py              # Test configuration
+│   │   ├── unit/                    # Unit tests
+│   │   ├── integration/             # Integration tests
+│   │   └── fixtures/                # Test data
+│   ├── docs/                         # Documentation
+│   ├── examples/                     # Usage examples
+│   └── scripts/                      # Utility scripts
+│
+├── 🚀 Deployment
+│   ├── deployment/                   # Deployment configurations
+│   │   ├── k8s/                     # Kubernetes manifests
+│   │   └── systemd/                 # Systemd service files
+│   ├── Dockerfile                    # Container configuration
+│   ├── docker-compose.yml           # Development environment
+│   └── Makefile                     # Development tasks
+│
+└── 📋 Configuration
+    ├── pyproject.toml               # Modern Python packaging
+    ├── requirements.txt             # Production dependencies
+    ├── requirements-dev.txt         # Development dependencies
+    ├── .env.example                 # Environment template
+    └── README.md                    # This file
+```
 
 3. **Install dependencies**  
    ```bash

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 # Import resolvers from the utils directory (will be migrated to resolvers/)
-from utils.full_text_resolver import (
+from resolvers.full_text_resolver import (
     resolve_full_text,
     extract_pmid_from_query,
     extract_doi_from_query,

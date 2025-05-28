@@ -39,7 +39,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 from dotenv import load_dotenv
 from Bio import Entrez
 from serpapi import GoogleSearch
-from utils.full_text_resolver import (
+from resolvers.full_text_resolver import (
     resolve_full_text,
     extract_pmid_from_query,
     extract_doi_from_query,
@@ -60,9 +60,9 @@ from utils.full_text_resolver import (
     get_pmcid_from_pmid_or_doi,  # Add this import
     resolve_full_text_enhanced,  # This is imported
 )
-from utils.pdf_extractor import download_pdf_to_temp
-from utils.browser_pdf_extractor import extract_pdf_with_browser, extract_aacr_html_text
-from utils.institutional_access import (
+from resolvers.pdf_extractor import download_pdf_to_temp
+from resolvers.browser_pdf_extractor import extract_pdf_with_browser, extract_aacr_html_text
+from resolvers.institutional_access import (
     extract_text_with_institutional_access,
     try_all_institutions,
 )
@@ -970,7 +970,7 @@ def test_sources():
         # After your existing test cases, add institutional access testing
         if doi:
             # Import institutional access module
-            from utils.institutional_access import (
+            from resolvers.institutional_access import (
                 INSTITUTION_PROXIES,
                 extract_text_with_institutional_access,
             )

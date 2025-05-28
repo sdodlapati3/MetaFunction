@@ -15,7 +15,7 @@ import subprocess
 from bs4 import BeautifulSoup
 
 # Reuse your existing PDF extraction methods
-from utils.pdf_extractor import extract_text_from_pdf_bytes
+from resolvers.pdf_extractor import extract_text_from_pdf_bytes
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -275,7 +275,7 @@ def _extract_text_from_downloaded_pdf(pdf_path):
 
     # Try importing PDF extraction libraries
     try:
-        from utils.pdf_extractor import extract_text_from_pdf_bytes
+        from resolvers.pdf_extractor import extract_text_from_pdf_bytes
 
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
@@ -510,7 +510,7 @@ def extract_aacr_html_text(doi):
                                 and pdf_response.headers.get("Content-Type", "").lower()
                                 == "application/pdf"
                             ):
-                                from utils.pdf_extractor import (
+                                from resolvers.pdf_extractor import (
                                     extract_text_from_pdf_bytes,
                                 )
 
