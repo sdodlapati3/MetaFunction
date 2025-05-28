@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metafunction"
+version = "2.0.0"
+description = "AI-powered scientific paper analysis and summarization"
+authors = [{name = "Sanjeeva Dodlapati", email = "sdodl001@odu.edu"}]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "flask>=2.3.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "openai>=1.5.0",
+    "pdfplumber>=0.9.0",
+    "PyMuPDF>=1.23.0",
+    "pdfminer.six>=20221105",
+    "biopython>=1.81",
+    "google-search-results>=2.4.0",
+    "selenium>=4.15.0",
+    "webdriver-manager>=4.0.0",
+    "certifi>=2023.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "black>=23.7.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SanjeevaRDodlapati/MetaFunction"
+Repository = "https://github.com/SanjeevaRDodlapati/MetaFunction"
+Issues = "https://github.com/SanjeevaRDodlapati/MetaFunction/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "resolvers*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=app --cov=resolvers --cov-report=html --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
