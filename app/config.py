@@ -52,10 +52,16 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     
-    # Use environment variables for security in production
-    SECRET_KEY = os.getenv('SECRET_KEY')
-    if not SECRET_KEY:
-        raise ValueError("SECRET_KEY must be set in production")
+    @classmethod
+    def init_app(cls, app):
+        """Initialize production configuration."""
+        super().init_app(app)
+        
+        # Validate required production settings
+        secret_key = os.getenv('SECRET_KEY')
+        if not secret_key:
+            raise ValueError("SECRET_KEY must be set in production")
+        app.config['SECRET_KEY'] = secret_key
 
 class TestingConfig(Config):
     """Testing configuration."""

@@ -15,6 +15,21 @@ from app.config import Config
 logger = logging.getLogger(__name__)
 
 
+def setup_logging(level=logging.INFO):
+    """Configure logging for the application."""
+    log_dir = Config.LOG_DIR
+    log_dir.mkdir(exist_ok=True)
+    
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(levelname)s - %(module)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_dir / "application.log"),
+            logging.StreamHandler(),
+        ],
+    )
+
+
 class LoggingService:
     """Service for structured application logging."""
     

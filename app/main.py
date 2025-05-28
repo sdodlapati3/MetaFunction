@@ -35,7 +35,7 @@ def create_app(config_class=None):
     
     # Initialize logging
     from app.services.logging_service import setup_logging
-    setup_logging(app)
+    setup_logging()
     
     # Register blueprints
     from app.routes.web import web_bp
