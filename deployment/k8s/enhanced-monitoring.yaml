@@ -1,0 +1,630 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enhanced-monitoring-config
+  namespace: monitoring
+data:
+  prometheus-rules.yaml: |
+    groups:
+    - name: metafunction.rules
+      rules:
+      # Application Performance Rules
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.instance }}"
+      
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.instance }}"
+      
+      # Infrastructure Rules
+      - alert: NodeHighCPU
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Node CPU usage is high"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+      
+      - alert: NodeHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Node memory usage is high"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+      
+      - alert: PodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+        for: 0m
+        labels:
+          severity: critical
+          component: kubernetes
+        annotations:
+          summary: "Pod is crash looping"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+      
+      # Security Rules
+      - alert: SuspiciousNetworkActivity
+        expr: increase(falco_events_total{rule_name=~".*network.*"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Suspicious network activity detected"
+          description: "{{ $value }} suspicious network events in the last 5 minutes"
+      
+      - alert: UnauthorizedAPIAccess
+        expr: increase(apiserver_audit_total{verb="create",objectRef_resource="secrets"}[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Unauthorized API access attempt"
+          description: "Multiple unauthorized attempts to access secrets"
+      
+      # Cost Optimization Rules
+      - alert: HighResourceWaste
+        expr: (kube_pod_container_resource_requests{resource="cpu"} - kube_pod_container_resource_usage{resource="cpu"}) / kube_pod_container_resource_requests{resource="cpu"} > 0.5
+        for: 30m
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "High resource waste detected"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is wasting {{ $value | humanizePercentage }} of requested CPU"
+      
+      - alert: UnusedResources
+        expr: up{job="node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "Unused node detected"
+          description: "Node {{ $labels.instance }} appears to be unused"
+      
+      # Database Rules
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool usage is {{ $value | humanizePercentage }}"
+      
+      - alert: DatabaseSlowQueries
+        expr: pg_stat_statements_mean_time_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}ms"
+
+  grafana-dashboards.json: |
+    {
+      "dashboards": [
+        {
+          "name": "MetaFunction Enterprise Overview",
+          "uid": "metafunction-overview",
+          "panels": [
+            {
+              "title": "Request Rate",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(http_requests_total[5m])",
+                  "legendFormat": "{{method}} {{status}}"
+                }
+              ]
+            },
+            {
+              "title": "Response Time",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+                  "legendFormat": "95th percentile"
+                },
+                {
+                  "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+                  "legendFormat": "50th percentile"
+                }
+              ]
+            },
+            {
+              "title": "Error Rate",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m])",
+                  "legendFormat": "Error Rate"
+                }
+              ]
+            },
+            {
+              "title": "Resource Usage",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "rate(container_cpu_usage_seconds_total[5m])",
+                  "legendFormat": "CPU Usage"
+                },
+                {
+                  "expr": "container_memory_usage_bytes",
+                  "legendFormat": "Memory Usage"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Security & Compliance Dashboard",
+          "uid": "security-compliance",
+          "panels": [
+            {
+              "title": "Security Events",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "increase(falco_events_total[5m])",
+                  "legendFormat": "{{rule_name}}"
+                }
+              ]
+            },
+            {
+              "title": "Policy Violations",
+              "type": "stat",
+              "targets": [
+                {
+                  "expr": "sum(gatekeeper_violations_total)",
+                  "legendFormat": "Total Violations"
+                }
+              ]
+            },
+            {
+              "title": "Vulnerability Scan Results",
+              "type": "table",
+              "targets": [
+                {
+                  "expr": "grype_vulnerabilities_total",
+                  "legendFormat": "{{severity}}"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Cost Optimization Dashboard",
+          "uid": "cost-optimization",
+          "panels": [
+            {
+              "title": "Cost per Namespace",
+              "type": "piechart",
+              "targets": [
+                {
+                  "expr": "kubecost_namespace_cost_total",
+                  "legendFormat": "{{namespace}}"
+                }
+              ]
+            },
+            {
+              "title": "Resource Efficiency",
+              "type": "graph",
+              "targets": [
+                {
+                  "expr": "kubecost_cluster_cpu_efficiency",
+                  "legendFormat": "CPU Efficiency"
+                },
+                {
+                  "expr": "kubecost_cluster_memory_efficiency",
+                  "legendFormat": "Memory Efficiency"
+                }
+              ]
+            },
+            {
+              "title": "Wasted Resources",
+              "type": "stat",
+              "targets": [
+                {
+                  "expr": "kubecost_cluster_idle_cost",
+                  "legendFormat": "Idle Cost"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+  jaeger-config.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: jaeger-configuration
+    data:
+      sampling_strategies.json: |
+        {
+          "service_strategies": [
+            {
+              "service": "metafunction",
+              "type": "probabilistic",
+              "param": 0.1
+            }
+          ],
+          "default_strategy": {
+            "type": "probabilistic",
+            "param": 0.01
+          }
+        }
+
+  otel-collector-config.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: otel-collector-config
+    data:
+      config.yaml: |
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+          jaeger:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:14250
+              thrift_http:
+                endpoint: 0.0.0.0:14268
+          prometheus:
+            config:
+              scrape_configs:
+                - job_name: 'metafunction'
+                  static_configs:
+                    - targets: ['metafunction:8080']
+        
+        processors:
+          batch:
+            timeout: 1s
+            send_batch_size: 1024
+          memory_limiter:
+            limit_mib: 512
+          resource:
+            attributes:
+              - key: environment
+                value: ${ENVIRONMENT}
+                action: insert
+              - key: cluster
+                value: ${CLUSTER_NAME}
+                action: insert
+        
+        exporters:
+          jaeger:
+            endpoint: jaeger-collector:14250
+            tls:
+              insecure: true
+          prometheus:
+            endpoint: "0.0.0.0:8889"
+          elasticsearch:
+            endpoints: ["elasticsearch:9200"]
+            index: traces
+          logging:
+            loglevel: debug
+        
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp, jaeger]
+              processors: [memory_limiter, batch, resource]
+              exporters: [jaeger, elasticsearch, logging]
+            metrics:
+              receivers: [otlp, prometheus]
+              processors: [memory_limiter, batch, resource]
+              exporters: [prometheus, logging]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enhanced-monitoring
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enhanced-monitoring
+  template:
+    metadata:
+      labels:
+        app: enhanced-monitoring
+    spec:
+      containers:
+      - name: prometheus-config-reloader
+        image: quay.io/prometheus-operator/prometheus-config-reloader:v0.68.0
+        args:
+        - --config-file=/etc/prometheus/prometheus.yml
+        - --config-envsubst-file=/etc/prometheus-shared/prometheus.yml
+        - --watched-dir=/etc/prometheus-rules
+        - --reload-url=http://localhost:9090/-/reload
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-shared
+          mountPath: /etc/prometheus-shared
+        - name: prometheus-rules
+          mountPath: /etc/prometheus-rules
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: enhanced-monitoring-config
+      - name: prometheus-shared
+        emptyDir: {}
+      - name: prometheus-rules
+        configMap:
+          name: enhanced-monitoring-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enhanced-monitoring
+  namespace: monitoring
+spec:
+  selector:
+    app: enhanced-monitoring
+  ports:
+  - port: 9090
+    targetPort: 9090
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: metafunction-metrics
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: metafunction
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-config
+  namespace: monitoring
+data:
+  slo.yaml: |
+    # Service Level Objectives Configuration
+    apiVersion: sloth.slok.dev/v1
+    kind: PrometheusServiceLevel
+    metadata:
+      name: metafunction-slo
+      namespace: monitoring
+    spec:
+      service: "metafunction"
+      labels:
+        team: "platform"
+        env: "production"
+      slos:
+      - name: "requests-availability"
+        objective: 99.9
+        description: "99.9% of requests should be successful"
+        sli:
+          events:
+            error_query: sum(rate(http_requests_total{job="metafunction",code=~"(5..|4..)"}[5m]))
+            total_query: sum(rate(http_requests_total{job="metafunction"}[5m]))
+        alerting:
+          name: MetafunctionHighErrorRate
+          labels:
+            severity: page
+          annotations:
+            runbook: https://runbooks.company.com/metafunction-errors
+      
+      - name: "requests-latency"
+        objective: 95.0
+        description: "95% of requests should be faster than 500ms"
+        sli:
+          events:
+            error_query: sum(rate(http_request_duration_seconds_bucket{job="metafunction",le="0.5"}[5m]))
+            total_query: sum(rate(http_request_duration_seconds_count{job="metafunction"}[5m]))
+        alerting:
+          name: MetafunctionHighLatency
+          labels:
+            severity: page
+          annotations:
+            runbook: https://runbooks.company.com/metafunction-latency
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-templates
+  namespace: monitoring
+data:
+  slack.tmpl: |
+    {{ define "slack.title" }}
+    {{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} {{ .GroupLabels.alertname }}
+    {{ end }}
+
+    {{ define "slack.text" }}
+    {{ range .Alerts }}
+    *Alert:* {{ .Annotations.summary }}
+    *Description:* {{ .Annotations.description }}
+    *Severity:* {{ .Labels.severity }}
+    *Component:* {{ .Labels.component }}
+    {{ if .Annotations.runbook }}*Runbook:* {{ .Annotations.runbook }}{{ end }}
+    {{ end }}
+    {{ end }}
+
+  email.tmpl: |
+    {{ define "email.subject" }}
+    [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} - MetaFunction
+    {{ end }}
+
+    {{ define "email.html" }}
+    <html>
+    <head>
+    <style>
+    .alert { padding: 15px; margin: 10px 0; border-radius: 4px; }
+    .critical { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+    .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+    .info { background-color: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+    </head>
+    <body>
+    <h2>MetaFunction Alert: {{ .GroupLabels.alertname }}</h2>
+    {{ range .Alerts }}
+    <div class="alert {{ .Labels.severity }}">
+      <h3>{{ .Annotations.summary }}</h3>
+      <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+      <p><strong>Severity:</strong> {{ .Labels.severity }}</p>
+      <p><strong>Component:</strong> {{ .Labels.component }}</p>
+      <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</p>
+      {{ if .Annotations.runbook }}
+      <p><strong>Runbook:</strong> <a href="{{ .Annotations.runbook }}">{{ .Annotations.runbook }}</a></p>
+      {{ end }}
+    </div>
+    {{ end }}
+    </body>
+    </html>
+    {{ end }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-metrics-config
+  namespace: monitoring
+data:
+  custom-metrics.yaml: |
+    # Custom metrics for business logic
+    metafunction_business_metrics:
+      - name: active_users_total
+        help: Total number of active users
+        type: gauge
+        labels: [environment, region]
+      
+      - name: transactions_total
+        help: Total number of transactions processed
+        type: counter
+        labels: [type, status, environment]
+      
+      - name: transaction_duration_seconds
+        help: Transaction processing duration
+        type: histogram
+        labels: [type, environment]
+        buckets: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+      
+      - name: queue_size
+        help: Current queue size
+        type: gauge
+        labels: [queue_name, environment]
+      
+      - name: cache_hit_ratio
+        help: Cache hit ratio
+        type: gauge
+        labels: [cache_type, environment]
+      
+      - name: database_connection_pool_active
+        help: Active database connections
+        type: gauge
+        labels: [database, environment]
+      
+      - name: feature_flag_evaluations_total
+        help: Feature flag evaluations
+        type: counter
+        labels: [flag_name, result, environment]
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: monitoring-access
+  namespace: monitoring
+spec:
+  hosts:
+  - monitoring.metafunction.io
+  gateways:
+  - monitoring-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /grafana
+    route:
+    - destination:
+        host: grafana
+        port:
+          number: 80
+  - match:
+    - uri:
+        prefix: /prometheus
+    route:
+    - destination:
+        host: prometheus-operated
+        port:
+          number: 9090
+  - match:
+    - uri:
+        prefix: /alertmanager
+    route:
+    - destination:
+        host: alertmanager-operated
+        port:
+          number: 9093
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: monitoring-gateway
+  namespace: monitoring
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - monitoring.metafunction.io
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: monitoring-tls-secret
+    hosts:
+    - monitoring.metafunction.io

@@ -1,0 +1,62 @@
+# MetaFunction Integration Test Configuration
+environment: production
+namespace: default
+test_timeout: 1800
+parallel_execution: true
+cleanup_after_tests: true
+
+# Test suite configurations
+test_suites:
+  infrastructure:
+    enabled: true
+    timeout: 900
+    critical: true
+  
+  application:
+    enabled: true
+    timeout: 1200
+    critical: true
+  
+  data:
+    enabled: true
+    timeout: 900
+    critical: false
+  
+  security:
+    enabled: true
+    timeout: 900
+    critical: false
+  
+  performance:
+    enabled: true
+    timeout: 1800
+    critical: false
+  
+  integration:
+    enabled: true
+    timeout: 1200
+    critical: false
+  
+  disaster_recovery:
+    enabled: true
+    timeout: 2400
+    critical: false
+
+# Test data configuration
+test_data:
+  storage_size: "1Gi"
+  database_host: "postgresql.default.svc.cluster.local"
+  database_name: "metafunction"
+  redis_host: "redis.default.svc.cluster.local"
+
+# Retry configuration
+retry:
+  max_attempts: 3
+  backoff_factor: 2
+  initial_delay: 5
+
+# Reporting configuration
+reporting:
+  generate_json: true
+  generate_markdown: true
+  output_directory: "test-reports"
