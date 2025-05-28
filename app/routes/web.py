@@ -227,3 +227,8 @@ def health_check():
             'error': str(e),
             'timestamp': logging_service.get_current_timestamp()
         }, 503
+
+@web_bp.route('/favicon.ico')
+def favicon():
+    """Serve favicon to prevent 404 errors."""
+    return '', 204  # No content
