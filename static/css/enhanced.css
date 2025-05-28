@@ -1,0 +1,180 @@
+/* MetaFunction Enhanced Styles */
+
+/* Advanced animations */
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes typing {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+
+/* Enhanced message styling */
+.message.typing .message-content {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.message.typing .message-content::after {
+  content: "●●●";
+  animation: typing 1s ease-in-out infinite;
+  margin-left: 0.5rem;
+}
+
+/* Syntax highlighting for code blocks */
+.response-content pre code {
+  color: #d1d5db;
+}
+
+.response-content pre code .keyword {
+  color: #7c3aed;
+}
+
+.response-content pre code .string {
+  color: #059669;
+}
+
+.response-content pre code .comment {
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* Enhanced form styling */
+.form-textarea:focus::placeholder {
+  opacity: 0.5;
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* Advanced button states */
+.submit-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.submit-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.submit-btn:hover::before {
+  left: 100%;
+}
+
+/* Paper info enhancements */
+.paper-info {
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+/* Advanced tooltips */
+.tooltip {
+  position: relative;
+}
+
+.tooltip::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.tooltip:hover::before {
+  opacity: 1;
+}
+
+/* Responsive enhancements */
+@media (max-width: 640px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .info-item {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .info-label {
+    min-width: auto;
+    font-weight: 600;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #0f172a;
+    --surface-color: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border-color: #334155;
+  }
+  
+  .paper-info {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  }
+}
+
+/* Print styles */
+@media print {
+  .input-panel,
+  .chat-header,
+  .chat-actions {
+    display: none !important;
+  }
+  
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+  
+  .chat-panel {
+    box-shadow: none;
+    border: none;
+  }
+  
+  .message-avatar {
+    display: none;
+  }
+  
+  .message-content {
+    max-width: 100%;
+    background: transparent !important;
+    color: black !important;
+  }
+}

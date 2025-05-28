@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scientific Paper Assistant</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    #chat-container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #00529B;
+    }
+    label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      display: block;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 15px;
+      font-size: 16px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      resize: none;
+    }
+    select, input[type="checkbox"] {
+      margin-bottom: 15px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 100%;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      color: #fff;
+      background: #00529B;
+      transition: background 0.3s ease;
+      width: 100%;
+    }
+    button:hover {
+      background: #003f7f;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .logs-metadata {
+      margin-top: 30px;
+    }
+    .logs-metadata button {
+      width: auto;
+      margin-right: 10px;
+    }
+    .response {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+    }
+    .spinner {
+      display: none;
+      margin: 0 auto;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #00529B;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .note {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #666;
+      font-style: italic;
+    }
+    .loading-indicator {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+    }
+    .paper-info {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f0f8ff;
+      font-size: 14px;
+    }
+    /* Markdown content styling */
+    .response-content h1 { font-size: 1.8em; margin-top: 1em; margin-bottom: 0.5em; }
+    .response-content h2 { font-size: 1.5em; margin-top: 0.83em; margin-bottom: 0.5em; }
+    .response-content h3 { font-size: 1.3em; margin-top: 0.67em; margin-bottom: 0.5em; }
+    .response-content h4 { font-size: 1.15em; margin-top: 0.33em; margin-bottom: 0.5em; }
+    .response-content ul, .response-content ol { padding-left: 2em; margin: 0.5em 0; }
+    .response-content code {
+      background-color: #f5f5f5;
+      border-radius: 3px;
+      padding: 2px 4px;
+      font-family: monospace;
+    }
+    .response-content pre {
+      background-color: #f5f5f5;
+      border-radius: 3px;
+      padding: 10px;
+      overflow: auto;
+    }
+    .response-content pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    .response-content blockquote {
+      border-left: 4px solid #ddd;
+      padding-left: 10px;
+      margin-left: 0;
+      color: #555;
+    }
+    .response-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+    .response-content table, .response-content th, .response-content td {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    .response-content th {
+      background-color: #f5f5f5;
+    }
+    /* Improved Markdown content styling with better spacing */
+    .response-content {
+      line-height: 1.5;
+    }
+    .response-content h1, .response-content h2, .response-content h3, 
+    .response-content h4, .response-content h5, .response-content h6 {
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      line-height: 1.2;
+    }
+    .response-content p {
+      margin-top: 0.5em;
+      margin-bottom: 0.8em;
+    }
+    .response-content ul, .response-content ol {
+      padding-left: 2em;
+      margin: 0.5em 0;
+    }
+    .response-content li {
+      margin-bottom: 0.3em;
+    }
+    .response-content blockquote {
+      border-left: 4px solid #ddd;
+      padding-left: 1em;
+      margin-left: 0;
+      margin-right: 0;
+    }
+    /* Updated response content styling - add this after your existing CSS */
+    .response-content {
+      line-height: 1.5;
+      /* Reset browser defaults that might add extra space */
+      margin: 0;
+      padding: 0;
+    }
+    
+    /* Fix headings with consistent spacing */
+    .response-content h1, 
+    .response-content h2, 
+    .response-content h3, 
+    .response-content h4, 
+    .response-content h5, 
+    .response-content h6 {
+      font-weight: bold !important;
+      margin: 1em 0 0.5em 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Tighten paragraph spacing */
+    .response-content p {
+      margin: 0.5em 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Fix list spacing */
+    .response-content ul, 
+    .response-content ol {
+      margin: 0.5em 0 0.5em 1.5em !important;
+      padding: 0 0 0 1em !important;
+    }
+    
+    .response-content li {
+      margin: 0.2em 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Remove extra space from blockquotes */
+    .response-content blockquote {
+      margin: 0.5em 0 0.5em 0.5em !important;
+      padding: 0 0 0 1em !important;
+    }
+    
+    /* Fix heading section spacing specifically */
+    .response-content h2 + p,
+    .response-content h3 + p {
+      margin-top: 0.3em !important;
+    }
+    
+    /* Override any pre-formatted text spacing */
+    .response-content pre {
+      margin: 0.5em 0 !important;
+      padding: 0.5em !important;
+      white-space: pre-wrap !important;
+    }
+
+    /* ULTRA-TIGHT spacing for response content - place this after existing styles */
+    .response-content {
+      line-height: 1.4 !important; /* Slightly tighter line height */
+    }
+    
+    /* Drastically reduce heading margins */
+    .response-content h1, 
+    .response-content h2, 
+    .response-content h3, 
+    .response-content h4, 
+    .response-content h5, 
+    .response-content h6 {
+      margin: 0.4em 0 0.2em 0 !important; /* Cut margins by more than half */
+      line-height: 1.1 !important; /* Tighter line height for headings */
+      padding: 0 !important;
+    }
+    
+    /* Minimal paragraph spacing */
+    .response-content p {
+      margin: 0.2em 0 !important; /* Cut margins by more than half */
+      padding: 0 !important;
+    }
+    
+    /* Fix list spacing */
+    .response-content ul, 
+    .response-content ol {
+      margin: 0.2em 0 0.2em 1.5em !important; /* Reduced from 0.5em */
+      padding: 0 0 0 0.5em !important; /* Reduced padding */
+    }
+    
+    .response-content li {
+      margin: 0.1em 0 !important; /* Half the previous margin */
+      padding: 0 !important;
+    }
+    
+    /* Almost no space around blockquotes */
+    .response-content blockquote {
+      margin: 0.2em 0 0.2em 0.3em !important;
+      padding: 0 0 0 0.5em !important;
+    }
+    
+    /* CRITICAL: Override any inline styles set by JavaScript */
+    .response-content h1[style],
+    .response-content h2[style],
+    .response-content h3[style],
+    .response-content h4[style],
+    .response-content h5[style],
+    .response-content h6[style],
+    .response-content p[style] {
+      margin-top: 0.2em !important;
+      margin-bottom: 0.2em !important;
+    }
+
+    /* ULTRA-MINIMAL spacing for response content */
+    .response-content {
+      line-height: 1.2 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Zero-margin headings */
+    .response-content h1, 
+    .response-content h2, 
+    .response-content h3, 
+    .response-content h4, 
+    .response-content h5, 
+    .response-content h6 {
+      margin: 0.2em 0 0.1em 0 !important;
+      padding: 0 !important;
+      line-height: 1 !important;
+      font-weight: bold !important;
+    }
+    
+    /* Almost no paragraph spacing */
+    .response-content p {
+      margin: 0 !important;
+      margin-bottom: 0.1em !important;
+      padding: 0 !important;
+    }
+    
+    /* Ultra-compact lists */
+    .response-content ul, 
+    .response-content ol {
+      margin: 0 0 0.1em 1em !important;
+      padding: 0 !important;
+    }
+    
+    .response-content li {
+      margin: 0 !important;
+      padding: 0 !important;
+      line-height: 1.1 !important;
+    }
+    
+    /* Zero spacing for list content */
+    .response-content li p {
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* No margin around blockquotes */
+    .response-content blockquote {
+      margin: 0.1em 0 0.1em 0.3em !important;
+      padding: 0 0 0 0.3em !important;
+    }
+    
+    /* Kill all margins on all elements */
+    .response-content * {
+      margin-top: 0 !important;
+      margin-bottom: 0.1em !important;
+    }
+    
+    /* Ensure no extra spacing between elements */
+    .response-content br {
+      display: none !important;
+    }
+
+    /* SUPER TIGHT SPACING - Add these at the very end of your stylesheet */
+  
+    /* Eliminate ALL spacing between headings and following paragraphs */
+    .response-content h1 + p,
+    .response-content h2 + p, 
+    .response-content h3 + p,
+    .response-content h4 + p {
+      margin-top: 0 !important;
+    }
+    
+    /* Make headings stick very close to content */
+    .response-content h1, 
+    .response-content h2, 
+    .response-content h3 {
+      margin: 0.1em 0 0 0 !important; /* Even tighter top margin */
+    }
+    
+    /* Make list items truly compact */
+    .response-content li {
+      line-height: 1 !important; /* Absolute minimum line height */
+      margin: 0 !important;
+    }
+    
+    /* Absolute minimum space between all elements */
+    .response-content * {
+      margin-bottom: 0.05em !important; /* Half of current spacing */
+    }
+    
+    /* Zero spacing for nested elements */
+    .response-content li > *,
+    .response-content blockquote > * {
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Force bullet points to be truly compact */
+    .response-content ul, .response-content ol {
+      margin: 0 !important;
+      padding-left: 1em !important; /* Just enough for the bullets to show */
+    }
+
+    /* EXTREME COMPACT SPACING - place at the very end of your stylesheet */
+  
+    /* Make all content ultra-compact */
+    .response-content {
+      line-height: 1 !important; /* Absolute minimum line height */
+      letter-spacing: -0.01em !important; /* Slightly tighter letter spacing */
+    }
+  
+    /* Force zero vertical space between ALL elements */
+    .response-content > *:not(:first-child) {
+      margin-top: 0 !important;
+    }
+  
+    /* Zero margin between ANY elements */
+    .response-content * + * {
+      margin-top: 0 !important;
+    }
+  
+    /* Make headings take minimal vertical space */
+    .response-content h1, .response-content h2, .response-content h3, 
+    .response-content h4, .response-content h5, .response-content h6 {
+      margin: 0 !important;
+      padding: 0 !important;
+      line-height: 0.9 !important;
+    }
+  
+    /* Completely eliminate paragraph spacing */
+    .response-content p {
+      margin: 0 !important;
+      padding: 0 !important;
+      display: inline-block !important; /* Makes paragraphs more compact */
+      width: 100% !important;
+    }
+  
+    /* Transform spacious elements like lists to be ultra compact */
+    .response-content ul, .response-content ol {
+      margin: 0 !important;
+      padding: 0 0 0 1em !important; /* Minimum indent for bullets */
+      line-height: 0.9 !important;
+    }
+  
+    /* Make list items as tight as possible */
+    .response-content li {
+      margin: 0 !important;
+      padding: 0 !important;
+      line-height: 0.9 !important;
+    }
+  
+    /* Remove ALL extra vertical space in the document */
+    .response-content br, 
+    .response-content hr {
+      display: none !important;
+    }
+
+    /* FINAL SPACING OPTIMIZATION - add at the very end of your stylesheet */
+  
+    /* Reduce list indentation for maximum horizontal density */
+    .response-content ul, .response-content ol {
+      padding-left: 0.7em !important; /* Even smaller indent for bullets */
+    }
+  
+    /* Reduce heading font size to take less vertical space */
+    .response-content h1 { font-size: 1.3em !important; }
+    .response-content h2 { font-size: 1.2em !important; }
+    .response-content h3 { font-size: 1.1em !important; }
+    .response-content h4, .response-content h5, .response-content h6 { font-size: 1em !important; }
+  
+    /* Use smaller bullet symbols */
+    .response-content ul {
+      list-style-type: '• ' !important;
+    }
+  
+    /* Eliminate ALL bottom margins */
+    .response-content * {
+      margin-bottom: 0 !important;
+    }
+  
+    /* Make paragraphs display as block again but with no vertical spacing */
+    .response-content p {
+      display: block !important;
+      margin-bottom: 0 !important;
+      margin-top: 0 !important;
+      padding-bottom: 0 !important;
+      padding-top: 0 !important;
+    }
+  
+    /* Create negative margins between certain elements to reduce space */
+    .response-content h1 + p, 
+    .response-content h2 + p, 
+    .response-content h3 + p {
+      margin-top: -0.1em !important;
+    }
+  
+    /* Give special subheadings a consistent but minimal style */
+    .response-content strong:first-child {
+      display: block;
+      margin-top: 0.1em !important;
+      margin-bottom: 0 !important;
+    }
+
+    /* Fix for separated colons in subheadings */
+    .response-content strong:first-child {
+      display: inline-block !important; /* Keep inline to prevent colon separation */
+    }
+    
+    /* Fix for colons appearing as separate dots */
+    .response-content p > strong + br + text,
+    .response-content p > strong + text,
+    .response-content p > strong + :not(element) {
+      display: inline !important;
+      margin-left: 0 !important;
+      padding-left: 0 !important;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div id="chat-container">
+    <h1>Scientific Paper Assistant</h1>
+    
+    <form id="chat-form" method="POST" action="/chat">
+      <label for="model-select">Select Model:</label>
+      <select id="model-select" name="model">
+        {% for model in models %}
+        <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>
+          {{ model }}
+        </option>
+        {% endfor %}
+      </select>
+      
+      <label for="message">Enter Paper Title, PubMed ID, or DOI:</label>
+      <textarea id="message" name="message" rows="4" placeholder="Enter title, PMID, or DOI..."></textarea>
+      
+      <label>
+        <input type="checkbox" name="ignore_cache" value="true">
+        Ignore Cache
+      </label>
+      <p class="note">Note: If the same query is entered, the response will be rendered from cache unless "Ignore Cache" is checked.</p>
+      
+      <button type="submit" id="submit-btn">Submit Query</button>
+    </form>
+    
+    <!-- Loading Indicator -->
+    <div class="loading-indicator" id="loading">
+      <p>Processing your request...</p>
+      <div class="spinner" id="loading-spinner"></div>
+    </div>
+    
+    <!-- Response Section -->
+    {% if response %}
+    <div class="response">
+      <h2>Response:</h2>
+      <div class="response-content">{{ response }}</div>
+    </div>
+    {% endif %}
+    
+    <!-- Paper Information Section -->
+    {% if paper_info %}
+    <div class="paper-info">
+      <h3>Paper Information</h3>
+      
+      {% if paper_info.title %}
+      <p><strong>Title:</strong> {{ paper_info.title }}</p>
+      {% endif %}
+      
+      {% if paper_info.doi %}
+      <p><strong>DOI:</strong> {{ paper_info.doi }}</p>
+      {% endif %}
+      
+      {% if paper_info.pmid %}
+      <p><strong>PMID:</strong> {{ paper_info.pmid }}</p>
+      {% endif %}
+      
+      <p><strong>Access Status:</strong> 
+        {% if paper_info.has_full_text %}
+        <span style="color: green;">Full Text Retrieved</span>
+        {% elif paper_info.has_abstract %}
+        <span style="color: orange;">Abstract Only</span>
+        {% else %}
+        <span style="color: red;">{{ paper_info.access_status or "Failed to retrieve text" }}</span>
+        {% endif %}
+      </p>
+      
+      {% if paper_info.url %}
+      <p><strong>PDF:</strong> <a href="{{ paper_info.url }}" target="_blank">View PDF</a></p>
+      {% endif %}
+      
+      {% if paper_info.access_logs %}
+      <details>
+        <summary>Access Attempt Details</summary>
+        <ul>
+        {% for log in paper_info.access_logs %}
+          <li>
+            <strong>{{ log.source }}:</strong> 
+            {% if log.success %}
+            <span style="color: green;">SUCCESS</span>
+            {% else %}
+            <span style="color: red;">FAILED</span> - {{ log.message }}
+            {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      
+      <p><strong>Content Source:</strong> {{ paper_info.source }}</p>
+      <p><strong>Content Length:</strong> {{ paper_info.text_length }} characters</p>
+    </div>
+    {% endif %}
+    
+    <div class="logs-metadata">
+      <h2>Logs and Metadata</h2>
+      <button onclick="window.location.href='/download_log'">Download Chat Log</button>
+      <button onclick="window.location.href='/download_metadata'">Download Metadata</button>
+      <button onclick="window.location.href='/view_metadata'" target="_blank">View Metadata</button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('chat-form').addEventListener('submit', function() {
+      // Show loading indicator when form is submitted
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading-spinner').style.display = 'block';
+      document.getElementById('submit-btn').disabled = true;
+    });
+  </script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const responseDiv = document.querySelector('.response-content');
+    if (!responseDiv) return;
+    
+    // Format the content with marked.js if not already processed
+    if (!responseDiv.classList.contains('markdown-processed')) {
+      responseDiv.classList.add('markdown-processed');
+      
+      // Process with marked.js
+      let content = responseDiv.textContent;
+      responseDiv.innerHTML = marked.parse(content);
+      
+      // Aggressively clean up the DOM after rendering
+      // Remove all BR tags - they add unwanted vertical space
+      const brs = responseDiv.querySelectorAll('br');
+      brs.forEach(br => br.remove());
+      
+      // Apply ultra-tight styling directly to all elements
+      const allElements = responseDiv.querySelectorAll('*');
+      allElements.forEach(el => {
+        el.style.marginTop = '0';
+        el.style.marginBottom = '0.1em';
+        el.style.paddingTop = '0';
+        el.style.paddingBottom = '0';
+      });
+      
+      // Make lists especially tight
+      const lists = responseDiv.querySelectorAll('ul, ol');
+      lists.forEach(list => {
+        list.style.margin = '0';
+        list.style.padding = '0 0 0 1em';
+      });
+      
+      const listItems = responseDiv.querySelectorAll('li');
+      listItems.forEach(item => {
+        item.style.margin = '0';
+        item.style.padding = '0';
+        item.style.lineHeight = '1.1';
+      });
+    }
+  });
+</script>
+<script>
+  // Run this after Markdown processing to enforce even tighter spacing
+  document.addEventListener('DOMContentLoaded', function() {
+    // Wait a moment for other scripts to finish
+    setTimeout(function() {
+      const responseDiv = document.querySelector('.response-content');
+      if (!responseDiv) return;
+      
+      // Force super tight headings
+      const headings = responseDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      headings.forEach(h => {
+        h.style.marginTop = '0.1em';
+        h.style.marginBottom = '0';
+        
+        // Make the following element have zero top margin
+        const nextElement = h.nextElementSibling;
+        if (nextElement) {
+          nextElement.style.marginTop = '0';
+        }
+      });
+      
+      // Extra tight list processing
+      const lists = responseDiv.querySelectorAll('ul, ol');
+      lists.forEach(list => {
+        list.style.margin = '0';
+        list.style.paddingLeft = '1em';
+      });
+    }, 100);
+  });
+</script>
+<script>
+  // Additional script to clean up colons in subheadings
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+      const responseDiv = document.querySelector('.response-content');
+      if (!responseDiv) return;
+      
+      // Fix colon separation in paragraphs - this combines text nodes
+      const paragraphs = responseDiv.querySelectorAll('p');
+      paragraphs.forEach(p => {
+        // Get the HTML and replace patterns like "<strong>Title</strong>:" with "<strong>Title:</strong>"
+        let html = p.innerHTML;
+        if (html.includes('<strong>') && html.includes('</strong>:')) {
+          p.innerHTML = html.replace(/<strong>([^<]+)<\/strong>:/g, '<strong>$1:</strong>');
+        }
+      });
+    }, 150);
+  });
+</script>
+</body>
+</html>
