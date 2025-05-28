@@ -141,71 +141,349 @@ MetaFunction/
     └── README.md                    # This file
 ```
 
-3. **Install dependencies**  
+## 🚀 Quick Start
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-username/MetaFunction.git
+   cd MetaFunction
+   ```
+
+2. **Create virtual environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Configure environment variables**  
+4. **Configure environment variables**
    ```bash
    cp .env.example .env
-   ```  
-   Edit `.env` and populate it with your API keys and credentials.
+   # Edit .env with your API keys and credentials
+   ```
 
-## Configuration
-
-The following variables must be set in your `.env` file:
-
-- `OPENAI_API_KEY` — Your OpenAI API key  
-- `DEESEEK_API_KEY` — Your Deepseek API key  
-- `PERPLEXITY_API_KEY` — Your Perplexity API key  
-- `DEESEEK_USERNAME` / `DEESEEK_PASSWORD` — Deepseek login credentials  
-- Any additional keys required by future resolvers
-
-## Usage
-
-1. **Start the server**  
+5. **Start the application**
    ```bash
+   python app.py
+   # Or using Flask CLI:
    flask run --port 8000
    ```
-2. **Open your browser**  
-   Navigate to `http://127.0.0.1:8000/`  
-3. **Enter a DOI, PMID, or title**, select the AI backend, and submit.  
 
-## Project Structure
+6. **Open your browser**
+   Navigate to `http://127.0.0.1:8000` and start analyzing papers!
 
-```plaintext
-MetaFunction/
-├── app.py                 # Flask application and routes
-├── requirements.txt       # Python dependencies
-├── .env.example           # Example env file with placeholders
-├── utils/                 # Fetching/parsing resolvers
-│   ├── doi_resolver.py
-│   ├── pmid_resolver.py
-│   ├── html_parser.py
-│   └── …
-├── templates/             # Jinja2 HTML templates
-│   ├── index.html
-│   └── layout.html
-└── logs/                  # (ignored) runtime logs
+## ⚙️ Configuration
+
+Create a `.env` file in the root directory with the following variables:
+
+```bash
+# AI Model API Keys
+OPENAI_API_KEY=your_openai_api_key_here
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+PERPLEXITY_API_KEY=your_perplexity_api_key_here
+
+# Deepseek Credentials (if using direct login)
+DEEPSEEK_USERNAME=your_username
+DEEPSEEK_PASSWORD=your_password
+
+# Optional: Custom endpoints (if using self-hosted)
+DEEPSEEK_ENDPOINT=https://api.deepseek.com
+PERPLEXITY_ENDPOINT=https://api.perplexity.ai
+
+# Flask Configuration
+FLASK_ENV=development
+SECRET_KEY=your_secret_key_here
 ```
 
-## Development
+### Required Variables:
+- **`OPENAI_API_KEY`** — Your OpenAI API key for GPT models
+- **`DEEPSEEK_API_KEY`** — Your DeepSeek API key for DeepSeek models  
+- **`PERPLEXITY_API_KEY`** — Your Perplexity API key for Perplexity models
+- **`DEEPSEEK_USERNAME`** / **`DEEPSEEK_PASSWORD`** — DeepSeek login credentials (alternative to API key)
 
-- Add unit tests in a `tests/` directory and integrate with CI.  
-- Use `flake8` or `black` for linting and formatting.  
-- Implement log rotation (e.g., via `logging.handlers.RotatingFileHandler`).
+## 💡 Usage
 
-## Contributing
+### Web Interface
+1. **Start the server**
+   ```bash
+   python app.py
+   # Or: flask run --port 8000
+   ```
 
-Contributions are welcome! Please:
+2. **Access the application**
+   Open your browser and navigate to `http://127.0.0.1:8000/`
 
-1. Fork the repo  
-2. Create a feature branch (`git checkout -b feature/my-feature`)  
-3. Commit your changes (`git commit -m 'Add new feature'`)  
-4. Push to the branch (`git push origin feature/my-feature`)  
-5. Open a pull request
+3. **Analyze papers**
+   - Enter a **DOI** (e.g., `10.1038/nature12373`)
+   - Enter a **PMID** (e.g., `23842501`) 
+   - Enter a **paper title** (e.g., "A complete genome sequence of Neanderthal")
+   - Select your preferred AI model (GPT-4o, GPT-4o-mini, DeepSeek, Perplexity)
+   - Submit your query
 
-## License
+### API Usage
+```bash
+# Get available models
+curl http://localhost:8000/api/models
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.  
+# Analyze a paper
+curl -X POST http://localhost:8000/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Summarize the main findings",
+    "paper_input": "10.1038/nature12373",
+    "model": "gpt-4o-mini"
+  }'
+```
+
+### Example Queries
+- "Summarize the main findings and methodology"
+- "What are the key limitations of this study?"
+- "How does this work relate to previous research?"
+- "What statistical methods were used?"  
+
+## 📚 API Reference
+
+### Core Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Main web interface |
+| `/chat` | POST | Process paper analysis request |
+| `/api/models` | GET | List available AI models |
+| `/api/analyze` | POST | Analyze paper via API |
+| `/api/paper/resolve` | POST | Resolve paper information |
+| `/health` | GET | Application health check |
+| `/download_log` | GET | Download chat logs |
+| `/view_metadata` | GET | View paper metadata |
+
+### Request/Response Examples
+
+**Analyze Paper:**
+```javascript
+POST /api/analyze
+{
+  "query": "Summarize this paper",
+  "paper_input": "10.1038/nature12373",
+  "model": "gpt-4o-mini",
+  "session_id": "user123"
+}
+
+Response:
+{
+  "success": true,
+  "response": "This paper presents...",
+  "paper_info": {
+    "title": "Paper Title",
+    "doi": "10.1038/nature12373",
+    "authors": ["Author 1", "Author 2"]
+  }
+}
+```
+
+## 🛠️ Development
+
+### Setting up Development Environment
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run linting
+flake8 app/ resolvers/
+
+# Format code
+black app/ resolvers/
+
+# Run tests (when available)
+pytest tests/
+```
+
+### Code Structure Guidelines
+- **Services**: Business logic in `app/services/`
+- **Resolvers**: Paper content extraction in `resolvers/`
+- **Routes**: HTTP handlers in `app/routes/`
+- **Configuration**: Environment settings in `app/config.py`
+
+### Adding New AI Models
+1. Create client in `app/clients/`
+2. Register in `AIService` 
+3. Add model configuration
+4. Update documentation
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Workflow
+1. **Fork the repository**
+   ```bash
+   git clone https://github.com/your-username/MetaFunction.git
+   cd MetaFunction
+   ```
+
+2. **Create a feature branch**
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+
+3. **Set up development environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+4. **Make your changes**
+   - Follow existing code style
+   - Add tests if applicable
+   - Update documentation
+
+5. **Test your changes**
+   ```bash
+   python app.py  # Test locally
+   flake8 app/ resolvers/  # Check code style
+   ```
+
+6. **Submit a Pull Request**
+   ```bash
+   git commit -m "feat: add amazing feature"
+   git push origin feature/amazing-feature
+   ```
+
+### Guidelines
+- **Code Style**: Follow PEP 8 and use `black` for formatting
+- **Commits**: Use conventional commit messages (`feat:`, `fix:`, `docs:`)
+- **Testing**: Add tests for new functionality
+- **Documentation**: Update relevant documentation
+
+### Areas for Contribution
+- 🧪 **Testing**: Expand test coverage
+- 🔍 **Resolvers**: Add new paper source integrations
+- 🤖 **AI Models**: Add support for new AI providers
+- 📚 **Documentation**: Improve guides and examples
+- 🐛 **Bug Fixes**: Fix issues and improve reliability
+- ⚡ **Performance**: Optimize paper resolution speed
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**API Key Errors**
+```bash
+Error: Missing API key for model
+```
+- **Solution**: Ensure all required API keys are set in `.env`
+
+**Port Already in Use**
+```bash
+Error: Address already in use
+```
+- **Solution**: Use a different port or kill existing process
+```bash
+lsof -ti:8000 | xargs kill  # Kill process on port 8000
+python app.py --port 8001   # Use different port
+```
+
+**Paper Not Found**
+```bash
+Error: Could not resolve paper
+```
+- **Solution**: Try different identifier format (DOI vs PMID vs title)
+- Check if paper is publicly accessible
+- Verify the identifier is correct
+
+**Model Timeout**
+```bash
+Error: API request timed out
+```
+- **Solution**: Check internet connection and API service status
+- Try a different AI model
+- Reduce text length for analysis
+
+### Debug Mode
+```bash
+export FLASK_ENV=development
+export LOG_LEVEL=DEBUG
+python app.py
+```
+
+### Getting Help
+- 📖 **Documentation**: Check existing guides and examples
+- 🐛 **Issues**: Create an issue on GitHub with details
+- 💬 **Discussions**: Join community discussions
+- 📧 **Contact**: Reach out to maintainers
+
+## 📊 Features
+
+### ✅ Current Features
+- **Multi-source paper resolution** (DOI, PMID, title, arXiv)
+- **AI-powered analysis** (OpenAI, DeepSeek, Perplexity)
+- **Full-text extraction** from multiple sources
+- **Web interface** with clean, responsive design
+- **REST API** for programmatic access
+- **Comprehensive logging** and metadata tracking
+- **Institutional access** support
+- **PDF extraction** capabilities
+
+### 🚧 Planned Features
+- **Database integration** for persistent storage
+- **User authentication** and session management
+- **Advanced paper search** and discovery
+- **Citation analysis** and reference mapping
+- **Batch processing** for multiple papers
+- **Export formats** (PDF, Word, LaTeX)
+- **Collaboration features** for team research
+- **Dashboard analytics** for usage insights
+
+## 📄 License
+
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+
+```
+MIT License
+
+Copyright (c) 2024 MetaFunction Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+```
+
+---
+
+## 📋 Project Status
+
+**Version**: 2.0.0 - **Production Ready** ✨
+
+This project has undergone a comprehensive modernization from monolithic architecture to a professional, modular platform. See [PROJECT_COMPLETION_FINAL.md](PROJECT_COMPLETION_FINAL.md) for detailed transformation report and [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
+<div align="center">
+
+**🧬 Made with ❤️ for the Research Community**
+
+*Empowering researchers with AI-driven paper analysis*
+
+[⭐ Star this project](https://github.com/your-username/MetaFunction) •
+[🐛 Report Bug](https://github.com/your-username/MetaFunction/issues) •
+[💡 Request Feature](https://github.com/your-username/MetaFunction/issues) •
+[📋 Project Status](PROJECT_COMPLETION_FINAL.md)
+
+[![GitHub stars](https://img.shields.io/github/stars/your-username/MetaFunction?style=social)](https://github.com/your-username/MetaFunction)
+[![GitHub forks](https://img.shields.io/github/forks/your-username/MetaFunction?style=social)](https://github.com/your-username/MetaFunction)
+
+</div>  
