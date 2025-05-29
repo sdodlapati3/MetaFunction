@@ -7,7 +7,7 @@ the main chat interface and utility endpoints.
 
 import uuid
 import logging
-from flask import Blueprint, render_template, request, session, send_file
+from flask import Blueprint, render_template, request, session, send_file, jsonify
 from werkzeug.exceptions import BadRequest
 
 from app.services.ai_service import AIService

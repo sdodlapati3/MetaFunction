@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MetaFunction - AI Scientific Paper Analysis</title>
   
+  <!-- Marked.js for markdown processing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
   <style>
     :root {
       --primary-color: #2563eb;
@@ -14,19 +17,7 @@
       --warning-color: #d97706;
       --error-color: #dc2626;
       --background-color: #f8fafc;
-      --su            <div class="form-row">
-              <div class="form-group">
-                <label for="model" class="form-label">AI Model</label>
-                <select id="model" name="model" class="form-select" required>
-                  <option value="gpt-4o-mini">GPT-4o Mini (Fast & Recommended)</option>
-                  <option value="gpt-4">GPT-4 (Advanced)</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast)</option>
-                  <option value="deepseek-chat">DeepSeek Chat</option>
-                  <option value="deepseek-coder">DeepSeek Coder</option>
-                  <option value="perplexity-online-llama3">Perplexity Llama3 (Online)</option>
-                </select>
-              </div>
-            </div>: #ffffff;
+      --surface-color: #ffffff;
       --text-primary: #1e293b;
       --text-secondary: #64748b;
       --border-color: #e2e8f0;
@@ -379,6 +370,97 @@
       line-height: 1.6;
     }
 
+    /* Enhanced markdown styling for response content */
+    .response-content h1, .response-content h2, .response-content h3, 
+    .response-content h4, .response-content h5, .response-content h6 {
+      margin: 1em 0 0.5em 0;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .response-content h1 { font-size: 1.8em; }
+    .response-content h2 { font-size: 1.5em; }
+    .response-content h3 { font-size: 1.3em; }
+    .response-content h4 { font-size: 1.15em; }
+
+    .response-content p {
+      margin: 0.75em 0;
+      line-height: 1.6;
+    }
+
+    .response-content ul, .response-content ol {
+      margin: 0.75em 0;
+      padding-left: 2em;
+    }
+
+    .response-content li {
+      margin: 0.25em 0;
+      line-height: 1.5;
+    }
+
+    .response-content strong {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .response-content em {
+      font-style: italic;
+    }
+
+    .response-content code {
+      background: rgba(0, 0, 0, 0.1);
+      padding: 0.125em 0.25em;
+      border-radius: 0.25em;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.9em;
+    }
+
+    .response-content pre {
+      background: rgba(0, 0, 0, 0.05);
+      padding: 1em;
+      border-radius: 0.5em;
+      overflow-x: auto;
+      margin: 0.75em 0;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .response-content pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .response-content blockquote {
+      border-left: 4px solid var(--primary-color);
+      margin: 0.75em 0;
+      padding: 0.5em 0 0.5em 1em;
+      background: rgba(37, 99, 235, 0.05);
+      font-style: italic;
+    }
+
+    .response-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+      border: 1px solid var(--border-color);
+    }
+
+    .response-content th, .response-content td {
+      border: 1px solid var(--border-color);
+      padding: 0.5em;
+      text-align: left;
+    }
+
+    .response-content th {
+      background: var(--background-color);
+      font-weight: 600;
+    }
+
+    .response-content hr {
+      border: none;
+      border-top: 1px solid var(--border-color);
+      margin: 1.5em 0;
+    }
+
     /* Copy Button */
     .copy-button {
       background: var(--secondary-color);
@@ -662,7 +744,27 @@
     // Initialize the UI
     document.addEventListener('DOMContentLoaded', () => {
       new MetaFunctionUI();
+      
+      // Process markdown in response content
+      const responseContent = document.querySelector('.response-content');
+      if (responseContent) {
+        processMarkdown(responseContent);
+      }
     });
+
+    // Function to process markdown content
+    function processMarkdown(element) {
+      if (!element || typeof marked === 'undefined') return;
+      
+      // Get the raw text content
+      const rawContent = element.textContent;
+      
+      // Process with marked.js
+      const htmlContent = marked.parse(rawContent);
+      
+      // Set the processed HTML
+      element.innerHTML = htmlContent;
+    }
 
     // Handle page load state
     window.addEventListener('load', () => {
