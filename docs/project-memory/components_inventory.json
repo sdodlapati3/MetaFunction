@@ -1,0 +1,313 @@
+{
+  "last_updated": "2025-05-29T04:34:51.492141",
+  "documentation_components": [
+    {
+      "name": "Developer Onboarding",
+      "status": "documented",
+      "location": "docs/DEVELOPER_ONBOARDING.md",
+      "description": "- Python 3.8+",
+      "last_modified": "2025-05-29T02:39:15.853287",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Project Status",
+      "status": "implemented",
+      "location": "docs/PROJECT_STATUS.md",
+      "description": "**Generated:** 2025-05-29 04:32:08",
+      "last_modified": "2025-05-29T04:32:08.455884",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Development Environment Standardization",
+      "status": "implemented",
+      "location": "docs/DEVELOPMENT_ENVIRONMENT_STANDARDIZATION.md",
+      "description": "A comprehensive standardization system that ensures consistent development environments across all team members, reducing \"works on my machine\" issues and accelerating onboarding.",
+      "last_modified": "2025-05-29T02:50:24.152373",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Automated Documentation System",
+      "status": "documented",
+      "location": "docs/AUTOMATED_DOCUMENTATION_SYSTEM.md",
+      "description": "An intelligent system that automatically maintains, updates, and validates documentation across the MetaFunction repository, ensuring documentation stays current with code changes and architectural evolution.",
+      "last_modified": "2025-05-29T02:50:24.118841",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Architecture Overview",
+      "status": "pending",
+      "location": "docs/ARCHITECTURE_OVERVIEW.md",
+      "description": "MetaFunction follows a **modern, enterprise-grade, microservices-inspired** architecture built on Flask with clear separation of concerns.",
+      "last_modified": "2025-05-29T02:39:15.838560",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Quick Start Guide",
+      "status": "documented",
+      "location": "docs/QUICK_START_GUIDE.md",
+      "description": "Enterprise-grade AI-powered scientific paper analysis platform that transforms research literature into actionable insights using multiple AI backends (OpenAI, DeepSeek, Perplexity).",
+      "last_modified": "2025-05-29T02:39:15.825955",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Code Quality Dashboard",
+      "status": "documented",
+      "location": "docs/CODE_QUALITY_DASHBOARD.md",
+      "description": "A centralized dashboard for monitoring code quality, test coverage, security vulnerabilities, and performance metrics across the MetaFunction ecosystem.",
+      "last_modified": "2025-05-29T02:50:24.101160",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Finops Cost Optimization Platform",
+      "status": "pending",
+      "location": "docs/FINOPS_COST_OPTIMIZATION_PLATFORM.md",
+      "description": "An advanced financial operations platform that goes beyond basic cost monitoring to provide intelligent cost optimization, predictive budgeting, and automated cost governance for the MetaFunction enterprise infrastructure.",
+      "last_modified": "2025-05-29T02:50:24.219266",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Documentation Organization Success",
+      "status": "implemented",
+      "location": "docs/DOCUMENTATION_ORGANIZATION_SUCCESS.md",
+      "description": "**\ud83d\udcca Organization Metrics:**",
+      "last_modified": "2025-05-29T01:43:26.715911",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Readme",
+      "status": "documented",
+      "location": "docs/README.md",
+      "description": "This directory contains all documentation for the MetaFunction project, organized for easy navigation and reference.",
+      "last_modified": "2025-05-29T02:39:15.816491",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Intelligent Testing Strategy",
+      "status": "documented",
+      "location": "docs/INTELLIGENT_TESTING_STRATEGY.md",
+      "description": "An advanced testing strategy that leverages AI and automation to optimize test execution, identify critical test scenarios, and maintain high code quality with minimal manual intervention.",
+      "last_modified": "2025-05-29T02:50:24.108827",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Platform Resilience Chaos Engineering",
+      "status": "documented",
+      "location": "docs/PLATFORM_RESILIENCE_CHAOS_ENGINEERING.md",
+      "description": "An advanced resilience engineering platform that goes beyond traditional monitoring to proactively test, validate, and improve the reliability of the MetaFunction ecosystem through controlled chaos experiments and automated resilience testing.",
+      "last_modified": "2025-05-29T02:50:24.219362",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Project Memory System",
+      "status": "implemented",
+      "location": "docs/PROJECT_MEMORY_SYSTEM.md",
+      "description": "A comprehensive system to track, document, and maintain institutional memory of all work completed on the MetaFunction project, ensuring nothing is forgotten and providing context for future development decisions.",
+      "last_modified": "2025-05-29T03:09:20.066257",
+      "dependencies": null,
+      "implementation_notes": ""
+    },
+    {
+      "name": "Change History Summary",
+      "status": "implemented",
+      "location": "docs/CHANGE_HISTORY_SUMMARY.md",
+      "description": "This document provides a **high-level overview** of all major changes, improvements, and transformations made to the MetaFunction repository. Perfect for understanding the evolution without reading detailed git logs.",
+      "last_modified": "2025-05-29T02:39:15.867008",
+      "dependencies": null,
+      "implementation_notes": ""
+    }
+  ],
+  "code_components": [
+    {
+      "name": "Module: config",
+      "status": "implemented",
+      "location": "app/config.py",
+      "description": "Classes: Config:, DevelopmentConfig, ProductionConfig. Functions: init_app, init_app, get_config",
+      "last_modified": "2025-05-28T02:56:46.907902",
+      "dependencies": null,
+      "implementation_notes": "4 classes, 3 functions"
+    },
+    {
+      "name": "Module: main",
+      "status": "implemented",
+      "location": "app/main.py",
+      "description": "Classes: . Functions: create_app, main",
+      "last_modified": "2025-05-28T02:56:46.907923",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 2 functions"
+    },
+    {
+      "name": "Module: base_client",
+      "status": "implemented",
+      "location": "app/clients/base_client.py",
+      "description": "Classes: BaseAIClient. Functions: get_response, is_available, get_config_error_message",
+      "last_modified": "2025-05-28T02:43:29.603971",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 3 functions"
+    },
+    {
+      "name": "Module: deepseek_client",
+      "status": "implemented",
+      "location": "app/clients/deepseek_client.py",
+      "description": "Classes: DeepSeekClient. Functions: get_response, is_available",
+      "last_modified": "2025-05-28T02:43:29.604026",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 2 functions"
+    },
+    {
+      "name": "Module: perplexity_client",
+      "status": "implemented",
+      "location": "app/clients/perplexity_client.py",
+      "description": "Classes: PerplexityClient. Functions: get_response, is_available",
+      "last_modified": "2025-05-28T02:43:29.604016",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 2 functions"
+    },
+    {
+      "name": "Module: openai_client",
+      "status": "implemented",
+      "location": "app/clients/openai_client.py",
+      "description": "Classes: OpenAIClient. Functions: get_response, is_available",
+      "last_modified": "2025-05-29T03:22:07.870862",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 2 functions"
+    },
+    {
+      "name": "Module: validators",
+      "status": "implemented",
+      "location": "app/utils/validators.py",
+      "description": "Classes: . Functions: validate_request_data, validate_model_name, validate_query",
+      "last_modified": "2025-05-28T02:56:46.913533",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 6 functions"
+    },
+    {
+      "name": "Module: exceptions",
+      "status": "implemented",
+      "location": "app/utils/exceptions.py",
+      "description": "Classes: MetaFunctionError, ModelNotFoundError, APIError. Functions: register_error_handlers, handle_validation_error, handle_model_not_found_error",
+      "last_modified": "2025-05-28T03:00:27.224711",
+      "dependencies": null,
+      "implementation_notes": "6 classes, 11 functions"
+    },
+    {
+      "name": "Module: web",
+      "status": "implemented",
+      "location": "app/routes/web.py",
+      "description": "Classes: . Functions: index, chat, download_log",
+      "last_modified": "2025-05-28T20:21:13.265469",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 9 functions"
+    },
+    {
+      "name": "Module: api",
+      "status": "implemented",
+      "location": "app/routes/api.py",
+      "description": "Classes: . Functions: get_models, analyze_paper, resolve_paper",
+      "last_modified": "2025-05-28T02:12:16.975084",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 8 functions"
+    },
+    {
+      "name": "Module: ai_service",
+      "status": "implemented",
+      "location": "app/services/ai_service.py",
+      "description": "Classes: AIService:. Functions: get_available_models, get_response, validate_model",
+      "last_modified": "2025-05-28T02:12:16.987616",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 7 functions"
+    },
+    {
+      "name": "Module: logging_service",
+      "status": "implemented",
+      "location": "app/services/logging_service.py",
+      "description": "Classes: LoggingService:. Functions: setup_logging, log_chat, log_metadata",
+      "last_modified": "2025-05-28T02:56:46.922304",
+      "dependencies": null,
+      "implementation_notes": "1 classes, 9 functions"
+    },
+    {
+      "name": "Module: paper_service",
+      "status": "implemented",
+      "location": "app/services/paper_service.py",
+      "description": "Classes: PaperResult:, PaperService:. Functions: has_content, primary_text, to_dict",
+      "last_modified": "2025-05-28T14:50:33.523074",
+      "dependencies": null,
+      "implementation_notes": "2 classes, 8 functions"
+    },
+    {
+      "name": "Module: institutional_access",
+      "status": "implemented",
+      "location": "resolvers/institutional_access.py",
+      "description": "Classes: . Functions: get_institutional_credentials, build_proxy_url, extract_text_with_institutional_access",
+      "last_modified": "2025-05-28T14:50:33.550957",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 4 functions"
+    },
+    {
+      "name": "Module: browser_pdf_extractor",
+      "status": "implemented",
+      "location": "resolvers/browser_pdf_extractor.py",
+      "description": "Classes: . Functions: extract_pdf_with_browser, extract_pdf_with_external_service, extract_aacr_html_text",
+      "last_modified": "2025-05-28T20:47:49.342028",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 3 functions"
+    },
+    {
+      "name": "Module: scihub",
+      "status": "implemented",
+      "location": "resolvers/scihub.py",
+      "description": "Classes: . Functions: fetch_from_scihub",
+      "last_modified": "2025-05-28T20:47:49.341986",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 1 functions"
+    },
+    {
+      "name": "Module: pdf_extractor",
+      "status": "implemented",
+      "location": "resolvers/pdf_extractor.py",
+      "description": "Classes: . Functions: extract_with_pdfplumber, extract_with_pymupdf, extract_with_pdfminer",
+      "last_modified": "2025-05-01T01:16:52.488222",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 8 functions"
+    },
+    {
+      "name": "Module: google_scholar",
+      "status": "implemented",
+      "location": "resolvers/google_scholar.py",
+      "description": "Classes: . Functions: search_google_scholar, get_fulltext_via_google_scholar",
+      "last_modified": "2025-05-28T14:50:33.523793",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 2 functions"
+    },
+    {
+      "name": "Module: full_text_resolver",
+      "status": "implemented",
+      "location": "resolvers/full_text_resolver.py",
+      "description": "Classes: . Functions: validate_pmid, validate_doi, fetch_pubmed_abstract",
+      "last_modified": "2025-05-28T20:47:49.340805",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 40 functions"
+    },
+    {
+      "name": "Module: decorators",
+      "status": "implemented",
+      "location": "resolvers/decorators.py",
+      "description": "Classes: . Functions: retry_request, wrapper",
+      "last_modified": "2025-05-01T01:16:52.140245",
+      "dependencies": null,
+      "implementation_notes": "0 classes, 2 functions"
+    }
+  ]
+}

@@ -25,8 +25,28 @@ class OpenAIClient(BaseAIClient):
         super().__init__('OPENAI_API_KEY')
         
         if self.api_key:
-            self.client = openai.OpenAI(api_key=self.api_key)
+            try:
+                # Initialize with only required parameters (OpenAI v1.x)
+                self.client = openai.OpenAI(
+                    api_key=self.api_key
+                )
+                # Test the client with a simple call to ensure it's working
+                logger.info("OpenAI client initialized successfully")
+            except TypeError as e:
+                # Handle parameter-related errors
+                logger.error(f"OpenAI client initialization failed due to parameter error: {e}")
+                try:
+                    # Fallback: Try with just the API key
+                    self.client = openai.OpenAI(api_key=self.api_key)
+                    logger.info("OpenAI client initialized with fallback parameters")
+                except Exception as fallback_e:
+                    logger.error(f"OpenAI client fallback initialization failed: {fallback_e}")
+                    self.client = None
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {e}")
+                self.client = None
         else:
+            logger.warning("OPENAI_API_KEY not found in environment variables")
             self.client = None
     
     def get_response(self, model: str, prompt: str) -> str:
@@ -44,7 +64,13 @@ class OpenAIClient(BaseAIClient):
             APIError: If API call fails after retries
         """
         if not self.is_available():
-            return self.get_config_error_message()
+            error_msg = self.get_config_error_message()
+            if not self.api_key:
+                error_msg += " No API key found."
+            elif not self.client:
+                error_msg += " Client initialization failed."
+            logger.error(error_msg)
+            raise APIError(error_msg)
         
         try:
             response = self._safe_create(

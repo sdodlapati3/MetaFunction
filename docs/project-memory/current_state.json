@@ -1,0 +1,1192 @@
+{
+  "generated_at": "2025-05-29T04:34:51.492141",
+  "project_root": "/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction",
+  "structure": {
+    "directories": [
+      "app",
+      "app/clients",
+      "app/utils",
+      "app/models",
+      "app/routes",
+      "app/services",
+      "archive",
+      "archive/documentation",
+      "archive/legacy-configs",
+      "archive/old-logs",
+      "archive/old-reports",
+      "tests",
+      "tests/unit",
+      "tests/enterprise",
+      "tests/integration",
+      "tests/fixtures",
+      "tests/performance",
+      "tests/post_deployment",
+      "utils",
+      "requirements",
+      "docs",
+      "docs/project-memory",
+      "docs/coverage",
+      "docs/reports",
+      "resolvers",
+      "logs",
+      "static",
+      "static/css",
+      "static/images",
+      "static/js",
+      "deployment",
+      "deployment/terraform",
+      "deployment/systemd",
+      "deployment/k8s",
+      "deployment/helm",
+      "deployment/helm/metafunction",
+      "deployment/helm/metafunction/templates",
+      "examples",
+      "scripts",
+      "templates",
+      "templates/admin",
+      "templates/components",
+      "templates/github",
+      "htmlcov"
+    ],
+    "key_files": [
+      {
+        "path": "./Dockerfile",
+        "size": 968,
+        "modified": "2025-05-29T01:29:11.345750"
+      },
+      {
+        "path": "./Makefile",
+        "size": 1591,
+        "modified": "2025-05-29T01:40:27.153229"
+      }
+    ],
+    "documentation_files": [
+      {
+        "path": "./OVERVIEW.md",
+        "size": 5786,
+        "modified": "2025-05-29T02:39:15.887780"
+      },
+      {
+        "path": "./CHANGELOG.md",
+        "size": 5173,
+        "modified": "2025-05-28T15:12:18.382182"
+      },
+      {
+        "path": "./README.md",
+        "size": 23943,
+        "modified": "2025-05-29T02:39:15.800599"
+      },
+      {
+        "path": "archive/README.md",
+        "size": 845,
+        "modified": "2025-05-29T01:13:40.156879"
+      },
+      {
+        "path": "archive/documentation/PROJECT_COMPLETION_ENTERPRISE.md",
+        "size": 8154,
+        "modified": "2025-05-28T20:03:17.966599"
+      },
+      {
+        "path": "archive/documentation/IMPORT_ERRORS_FIXED.md",
+        "size": 3851,
+        "modified": "2025-05-28T20:49:48.545130"
+      },
+      {
+        "path": "archive/documentation/WORKFLOW_ENHANCEMENT_COMPLETE.md",
+        "size": 6571,
+        "modified": "2025-05-28T23:38:31.604135"
+      },
+      {
+        "path": "archive/documentation/WORKFLOW_FAILURE_SUPPRESSION_FINAL_SUCCESS.md",
+        "size": 6897,
+        "modified": "2025-05-29T00:00:30.455093"
+      },
+      {
+        "path": "archive/documentation/GITHUB_ACTIONS_MONITORING_COMPLETE.md",
+        "size": 5332,
+        "modified": "2025-05-28T20:27:15.961436"
+      },
+      {
+        "path": "archive/documentation/USAGE_GUIDE.md",
+        "size": 0,
+        "modified": "2025-05-28T15:34:11.684643"
+      },
+      {
+        "path": "archive/documentation/GITHUB_ACTIONS_MONITORING_FIXED.md",
+        "size": 4132,
+        "modified": "2025-05-28T20:41:15.878802"
+      },
+      {
+        "path": "archive/documentation/PROJECT_COMPLETION_FINAL.md",
+        "size": 9136,
+        "modified": "2025-05-28T15:12:18.385745"
+      },
+      {
+        "path": "archive/documentation/ENHANCED_UI_GUIDE.md",
+        "size": 6304,
+        "modified": "2025-05-28T15:53:11.390293"
+      },
+      {
+        "path": "archive/documentation/ANALYSIS_COMPLETE.md",
+        "size": 0,
+        "modified": "2025-05-28T15:34:12.610814"
+      },
+      {
+        "path": "archive/documentation/WORKFLOW_MONITORING.md",
+        "size": 63,
+        "modified": "2025-05-29T00:16:34.042387"
+      },
+      {
+        "path": "archive/documentation/ENTERPRISE_VALIDATION_FINAL.md",
+        "size": 12401,
+        "modified": "2025-05-28T20:03:17.966538"
+      },
+      {
+        "path": "archive/documentation/WORKFLOW_IMPROVEMENT_ANALYSIS.md",
+        "size": 3743,
+        "modified": "2025-05-28T23:36:37.775251"
+      },
+      {
+        "path": "archive/documentation/MIGRATION_GUIDE.md",
+        "size": 0,
+        "modified": "2025-05-28T15:34:10.631524"
+      },
+      {
+        "path": "archive/documentation/ENTERPRISE_DEPLOYMENT_GUIDE.md",
+        "size": 16381,
+        "modified": "2025-05-28T20:03:17.964996"
+      },
+      {
+        "path": "archive/documentation/PROJECT_COMPLETION.md",
+        "size": 6282,
+        "modified": "2025-05-28T15:12:18.383554"
+      },
+      {
+        "path": "archive/documentation/WORKFLOW_FAILURE_SUPPRESSION_COMPLETE.md",
+        "size": 5395,
+        "modified": "2025-05-28T23:47:47.860411"
+      },
+      {
+        "path": "archive/documentation/ENHANCED_INTERFACE_COMPLETE.md",
+        "size": 5844,
+        "modified": "2025-05-28T20:03:18.536700"
+      },
+      {
+        "path": "archive/documentation/GITHUB_ACTIONS_ENHANCEMENT_FINAL_REPORT.md",
+        "size": 6905,
+        "modified": "2025-05-28T23:40:22.458378"
+      },
+      {
+        "path": "archive/documentation/OPERATIONAL_RUNBOOKS.md",
+        "size": 17801,
+        "modified": "2025-05-28T20:03:17.965015"
+      },
+      {
+        "path": "archive/documentation/ENTERPRISE_DEPLOYMENT_COMPLETE.md",
+        "size": 7181,
+        "modified": "2025-05-28T20:03:17.966566"
+      },
+      {
+        "path": "archive/old-reports/RESTRUCTURE_PLAN.md",
+        "size": 0,
+        "modified": "2025-05-28T15:34:09.918353"
+      },
+      {
+        "path": "archive/old-reports/METAFUNCTION_DEMO_COMPLETE.md",
+        "size": 5262,
+        "modified": "2025-05-28T20:57:49.708317"
+      },
+      {
+        "path": "archive/old-reports/PACKAGE_VERSION_ANALYSIS.md",
+        "size": 5374,
+        "modified": "2025-05-29T00:30:55.423833"
+      },
+      {
+        "path": "archive/old-reports/ENHANCED_CI_COMPLETE.md",
+        "size": 6242,
+        "modified": "2025-05-29T00:51:31.502438"
+      },
+      {
+        "path": "archive/old-reports/FINAL_SUCCESS_REPORT.md",
+        "size": 4638,
+        "modified": "2025-05-29T00:17:35.668723"
+      },
+      {
+        "path": "archive/old-reports/GIT_PUSH_SUMMARY.md",
+        "size": 3767,
+        "modified": "2025-05-28T22:51:57.264153"
+      },
+      {
+        "path": "archive/old-reports/ci_monitoring_report.txt",
+        "size": 577,
+        "modified": "2025-05-29T00:37:48.838588"
+      },
+      {
+        "path": "archive/old-reports/RESTRUCTURE_COMPLETE.md",
+        "size": 0,
+        "modified": "2025-05-28T15:34:11.352084"
+      },
+      {
+        "path": "requirements/requirements.txt",
+        "size": 855,
+        "modified": "2025-05-29T00:34:32.822167"
+      },
+      {
+        "path": "requirements/requirements-bulletproof.txt",
+        "size": 463,
+        "modified": "2025-05-29T00:54:30.701347"
+      },
+      {
+        "path": "requirements/requirements-stable.txt",
+        "size": 892,
+        "modified": "2025-05-29T00:35:30.400295"
+      },
+      {
+        "path": "requirements/requirements-dev.txt",
+        "size": 535,
+        "modified": "2025-05-28T23:35:32.671911"
+      },
+      {
+        "path": "requirements/requirements-lock.txt",
+        "size": 2239,
+        "modified": "2025-05-29T00:29:31.853297"
+      },
+      {
+        "path": "docs/DEVELOPER_ONBOARDING.md",
+        "size": 7917,
+        "modified": "2025-05-29T02:39:15.853287"
+      },
+      {
+        "path": "docs/PROJECT_STATUS.md",
+        "size": 3821,
+        "modified": "2025-05-29T04:32:08.455884"
+      },
+      {
+        "path": "docs/DEVELOPMENT_ENVIRONMENT_STANDARDIZATION.md",
+        "size": 19807,
+        "modified": "2025-05-29T02:50:24.152373"
+      },
+      {
+        "path": "docs/AUTOMATED_DOCUMENTATION_SYSTEM.md",
+        "size": 9449,
+        "modified": "2025-05-29T02:50:24.118841"
+      },
+      {
+        "path": "docs/ARCHITECTURE_OVERVIEW.md",
+        "size": 10436,
+        "modified": "2025-05-29T02:39:15.838560"
+      },
+      {
+        "path": "docs/QUICK_START_GUIDE.md",
+        "size": 2584,
+        "modified": "2025-05-29T02:39:15.825955"
+      },
+      {
+        "path": "docs/CODE_QUALITY_DASHBOARD.md",
+        "size": 2466,
+        "modified": "2025-05-29T02:50:24.101160"
+      },
+      {
+        "path": "docs/FINOPS_COST_OPTIMIZATION_PLATFORM.md",
+        "size": 9236,
+        "modified": "2025-05-29T02:50:24.219266"
+      },
+      {
+        "path": "docs/DOCUMENTATION_ORGANIZATION_SUCCESS.md",
+        "size": 6895,
+        "modified": "2025-05-29T01:43:26.715911"
+      },
+      {
+        "path": "docs/README.md",
+        "size": 3040,
+        "modified": "2025-05-29T02:39:15.816491"
+      },
+      {
+        "path": "docs/INTELLIGENT_TESTING_STRATEGY.md",
+        "size": 6468,
+        "modified": "2025-05-29T02:50:24.108827"
+      },
+      {
+        "path": "docs/PLATFORM_RESILIENCE_CHAOS_ENGINEERING.md",
+        "size": 17361,
+        "modified": "2025-05-29T02:50:24.219362"
+      },
+      {
+        "path": "docs/PROJECT_MEMORY_SYSTEM.md",
+        "size": 16224,
+        "modified": "2025-05-29T03:09:20.066257"
+      },
+      {
+        "path": "docs/CHANGE_HISTORY_SUMMARY.md",
+        "size": 9233,
+        "modified": "2025-05-29T02:39:15.867008"
+      },
+      {
+        "path": "docs/project-memory/daily_summary_20250529.md",
+        "size": 853,
+        "modified": "2025-05-29T03:15:27.941475"
+      },
+      {
+        "path": "docs/reports/REQUIREMENTS_CLEANUP_SUCCESS.md",
+        "size": 4407,
+        "modified": "2025-05-29T01:33:10.366518"
+      },
+      {
+        "path": "docs/reports/CLEANUP_COMPLETION_FINAL.md",
+        "size": 8265,
+        "modified": "2025-05-29T01:23:08.177592"
+      },
+      {
+        "path": "docs/reports/VIRTUAL_ENVIRONMENT_CLEANUP_SUCCESS.md",
+        "size": 4573,
+        "modified": "2025-05-29T01:50:52.882155"
+      },
+      {
+        "path": "docs/reports/PERFECT_SUCCESS_FINAL.md",
+        "size": 7309,
+        "modified": "2025-05-29T01:01:14.175429"
+      },
+      {
+        "path": "docs/reports/REPOSITORY_ORGANIZATION_FINAL_SUCCESS.md",
+        "size": 8586,
+        "modified": "2025-05-29T01:50:52.883060"
+      }
+    ],
+    "code_files": [
+      {
+        "path": "./app.py",
+        "size": 4948,
+        "modified": "2025-05-28T15:05:34.623582"
+      },
+      {
+        "path": "app/config.py",
+        "size": 2658,
+        "modified": "2025-05-28T02:56:46.907902"
+      },
+      {
+        "path": "app/__init__.py",
+        "size": 215,
+        "modified": "2025-05-28T02:05:15.392383"
+      },
+      {
+        "path": "app/main.py",
+        "size": 1775,
+        "modified": "2025-05-28T02:56:46.907923"
+      },
+      {
+        "path": "app/clients/base_client.py",
+        "size": 1479,
+        "modified": "2025-05-28T02:43:29.603971"
+      },
+      {
+        "path": "app/clients/__init__.py",
+        "size": 329,
+        "modified": "2025-05-28T02:43:29.604036"
+      },
+      {
+        "path": "app/clients/deepseek_client.py",
+        "size": 3514,
+        "modified": "2025-05-28T02:43:29.604026"
+      },
+      {
+        "path": "app/clients/perplexity_client.py",
+        "size": 3123,
+        "modified": "2025-05-28T02:43:29.604016"
+      },
+      {
+        "path": "app/clients/openai_client.py",
+        "size": 4696,
+        "modified": "2025-05-29T03:22:07.870862"
+      },
+      {
+        "path": "app/utils/validators.py",
+        "size": 6029,
+        "modified": "2025-05-28T02:56:46.913533"
+      },
+      {
+        "path": "app/utils/__init__.py",
+        "size": 377,
+        "modified": "2025-05-28T02:43:29.604172"
+      },
+      {
+        "path": "app/utils/exceptions.py",
+        "size": 4798,
+        "modified": "2025-05-28T03:00:27.224711"
+      },
+      {
+        "path": "app/routes/web.py",
+        "size": 13596,
+        "modified": "2025-05-28T20:21:13.265469"
+      },
+      {
+        "path": "app/routes/__init__.py",
+        "size": 137,
+        "modified": "2025-05-28T02:12:16.975234"
+      },
+      {
+        "path": "app/routes/api.py",
+        "size": 9207,
+        "modified": "2025-05-28T02:12:16.975084"
+      },
+      {
+        "path": "app/routes/github.py",
+        "size": 0,
+        "modified": "2025-05-28T20:03:18.527748"
+      },
+      {
+        "path": "app/services/ai_service.py",
+        "size": 8203,
+        "modified": "2025-05-28T02:12:16.987616"
+      },
+      {
+        "path": "app/services/logging_service.py",
+        "size": 8130,
+        "modified": "2025-05-28T02:56:46.922304"
+      },
+      {
+        "path": "app/services/paper_service.py",
+        "size": 14738,
+        "modified": "2025-05-28T14:50:33.523074"
+      },
+      {
+        "path": "archive/legacy-configs/app_new.py",
+        "size": 0,
+        "modified": "2025-05-28T15:34:12.683437"
+      },
+      {
+        "path": "archive/legacy-configs/app_legacy.py",
+        "size": 40855,
+        "modified": "2025-05-28T15:05:34.623545"
+      },
+      {
+        "path": "tests/conftest.py",
+        "size": 1538,
+        "modified": "2025-05-28T23:03:02.424177"
+      },
+      {
+        "path": "tests/performance/locustfile.py",
+        "size": 3709,
+        "modified": "2025-05-28T20:03:17.966638"
+      },
+      {
+        "path": "tests/post_deployment/health_check.py",
+        "size": 7822,
+        "modified": "2025-05-28T20:03:17.966929"
+      },
+      {
+        "path": "utils/full_text_resolver.py",
+        "size": 0,
+        "modified": "2025-05-28T15:34:11.957074"
+      },
+      {
+        "path": "docs/coverage/coverage_html_cb_6fb7b396.js",
+        "size": 25474,
+        "modified": "2025-05-29T01:21:12.721137"
+      },
+      {
+        "path": "resolvers/institutional_access.py",
+        "size": 7835,
+        "modified": "2025-05-28T14:50:33.550957"
+      },
+      {
+        "path": "resolvers/browser_pdf_extractor.py",
+        "size": 20448,
+        "modified": "2025-05-28T20:47:49.342028"
+      },
+      {
+        "path": "resolvers/__init__.py",
+        "size": 0,
+        "modified": "2025-05-28T02:05:15.387967"
+      },
+      {
+        "path": "resolvers/scihub.py",
+        "size": 4160,
+        "modified": "2025-05-28T20:47:49.341986"
+      },
+      {
+        "path": "resolvers/pdf_extractor.py",
+        "size": 12396,
+        "modified": "2025-05-01T01:16:52.488222"
+      },
+      {
+        "path": "resolvers/google_scholar.py",
+        "size": 6804,
+        "modified": "2025-05-28T14:50:33.523793"
+      },
+      {
+        "path": "resolvers/full_text_resolver.py",
+        "size": 49197,
+        "modified": "2025-05-28T20:47:49.340805"
+      },
+      {
+        "path": "resolvers/decorators.py",
+        "size": 773,
+        "modified": "2025-05-01T01:16:52.140245"
+      },
+      {
+        "path": "static/js/enhanced.js",
+        "size": 11575,
+        "modified": "2025-05-28T15:48:40.328850"
+      },
+      {
+        "path": "examples/ai_service_example.py",
+        "size": 7838,
+        "modified": "2025-05-28T02:03:51.049572"
+      },
+      {
+        "path": "scripts/github-actions-monitor.py",
+        "size": 24093,
+        "modified": "2025-05-28T23:05:18.134575"
+      },
+      {
+        "path": "scripts/validate-github-actions.py",
+        "size": 18171,
+        "modified": "2025-05-29T01:29:11.345484"
+      },
+      {
+        "path": "scripts/test-github-actions.py",
+        "size": 4424,
+        "modified": "2025-05-28T20:09:03.672401"
+      },
+      {
+        "path": "scripts/enhanced-ci-monitor.py",
+        "size": 14298,
+        "modified": "2025-05-29T00:37:37.009397"
+      },
+      {
+        "path": "scripts/project_memory_tracker.py",
+        "size": 19912,
+        "modified": "2025-05-29T03:12:21.139753"
+      },
+      {
+        "path": "scripts/daily_reminder.py",
+        "size": 12912,
+        "modified": "2025-05-29T03:15:22.412370"
+      },
+      {
+        "path": "scripts/restructure.py",
+        "size": 15675,
+        "modified": "2025-05-29T01:29:11.344502"
+      },
+      {
+        "path": "scripts/record_session.py",
+        "size": 16432,
+        "modified": "2025-05-29T03:15:22.406128"
+      },
+      {
+        "path": "scripts/test-github-actions-system.py",
+        "size": 14130,
+        "modified": "2025-05-29T01:29:11.345776"
+      },
+      {
+        "path": "htmlcov/coverage_html_cb_6fb7b396.js",
+        "size": 25474,
+        "modified": "2025-05-29T01:48:54.985880"
+      }
+    ],
+    "config_files": [
+      {
+        "path": "./pyproject.toml",
+        "size": 2223,
+        "modified": "2025-05-28T23:33:34.100018"
+      },
+      {
+        "path": "./docker-compose.yml",
+        "size": 499,
+        "modified": "2025-05-28T02:05:15.391091"
+      },
+      {
+        "path": "archive/legacy-configs/integration-test-config.yaml",
+        "size": 1114,
+        "modified": "2025-05-28T20:03:17.966233"
+      },
+      {
+        "path": "archive/old-logs/metadata_log.json",
+        "size": 3888,
+        "modified": "2025-04-30T22:57:19.864783"
+      },
+      {
+        "path": "docs/project-memory/reminder_log.json",
+        "size": 158,
+        "modified": "2025-05-29T03:15:27.941196"
+      },
+      {
+        "path": "docs/project-memory/current_state.json",
+        "size": 39445,
+        "modified": "2025-05-29T04:32:08.454929"
+      },
+      {
+        "path": "docs/project-memory/components_inventory.json",
+        "size": 13472,
+        "modified": "2025-05-29T04:32:08.455495"
+      },
+      {
+        "path": "docs/coverage/status.json",
+        "size": 7887,
+        "modified": "2025-05-29T01:21:12.963930"
+      },
+      {
+        "path": "deployment/k8s/autoscaling.yaml",
+        "size": 1013,
+        "modified": "2025-05-28T20:03:17.720135"
+      },
+      {
+        "path": "deployment/k8s/logging.yaml",
+        "size": 9251,
+        "modified": "2025-05-28T20:03:17.721292"
+      },
+      {
+        "path": "deployment/k8s/siem-integration.yaml",
+        "size": 26477,
+        "modified": "2025-05-28T20:03:17.966101"
+      },
+      {
+        "path": "deployment/k8s/metafunction.yaml",
+        "size": 2686,
+        "modified": "2025-05-28T20:03:17.652454"
+      },
+      {
+        "path": "deployment/k8s/advanced-monitoring.yaml",
+        "size": 21124,
+        "modified": "2025-05-28T20:03:17.964457"
+      },
+      {
+        "path": "deployment/k8s/secrets.yaml",
+        "size": 9894,
+        "modified": "2025-05-28T20:03:17.720868"
+      },
+      {
+        "path": "deployment/k8s/database-migration.yaml",
+        "size": 18758,
+        "modified": "2025-05-28T20:03:17.964556"
+      },
+      {
+        "path": "deployment/k8s/advanced-load-balancing.yaml",
+        "size": 22472,
+        "modified": "2025-05-28T20:03:17.965972"
+      },
+      {
+        "path": "deployment/k8s/multi-region.yaml",
+        "size": 17264,
+        "modified": "2025-05-28T20:03:17.964580"
+      },
+      {
+        "path": "deployment/k8s/enhanced-monitoring.yaml",
+        "size": 18199,
+        "modified": "2025-05-28T20:03:17.966220"
+      },
+      {
+        "path": "deployment/k8s/enhanced-security-compliance.yaml",
+        "size": 34263,
+        "modified": "2025-05-28T20:03:17.966202"
+      },
+      {
+        "path": "deployment/k8s/disaster-recovery.yaml",
+        "size": 15535,
+        "modified": "2025-05-28T20:03:17.742357"
+      },
+      {
+        "path": "deployment/k8s/api-gateway.yaml",
+        "size": 8532,
+        "modified": "2025-05-28T20:03:17.720928"
+      },
+      {
+        "path": "deployment/k8s/cost-optimization.yaml",
+        "size": 16683,
+        "modified": "2025-05-28T20:03:17.965719"
+      },
+      {
+        "path": "deployment/k8s/service-mesh.yaml",
+        "size": 5207,
+        "modified": "2025-05-28T20:03:17.721016"
+      },
+      {
+        "path": "deployment/k8s/database.yaml",
+        "size": 13572,
+        "modified": "2025-05-28T20:03:17.720905"
+      },
+      {
+        "path": "deployment/k8s/network-policies.yaml",
+        "size": 5890,
+        "modified": "2025-05-28T20:03:17.722823"
+      },
+      {
+        "path": "deployment/k8s/enterprise-logging.yaml",
+        "size": 39009,
+        "modified": "2025-05-28T20:03:17.966732"
+      },
+      {
+        "path": "deployment/k8s/container-security.yaml",
+        "size": 23797,
+        "modified": "2025-05-28T20:03:17.965500"
+      },
+      {
+        "path": "deployment/k8s/argocd-apps.yaml",
+        "size": 5377,
+        "modified": "2025-05-28T20:03:17.721730"
+      },
+      {
+        "path": "deployment/k8s/cert-manager.yaml",
+        "size": 3249,
+        "modified": "2025-05-28T20:03:17.722666"
+      },
+      {
+        "path": "deployment/k8s/chaos-engineering.yaml",
+        "size": 8949,
+        "modified": "2025-05-28T20:03:17.722773"
+      },
+      {
+        "path": "deployment/k8s/performance-optimization.yaml",
+        "size": 19922,
+        "modified": "2025-05-28T20:03:17.964518"
+      },
+      {
+        "path": "deployment/k8s/sbom-supply-chain.yaml",
+        "size": 23155,
+        "modified": "2025-05-28T20:03:17.965874"
+      },
+      {
+        "path": "deployment/k8s/security-compliance.yaml",
+        "size": 16800,
+        "modified": "2025-05-28T20:03:17.964494"
+      },
+      {
+        "path": "deployment/k8s/redis.yaml",
+        "size": 1214,
+        "modified": "2025-05-28T20:03:17.652401"
+      },
+      {
+        "path": "deployment/k8s/compliance-automation.yaml",
+        "size": 53649,
+        "modified": "2025-05-28T20:03:17.966161"
+      },
+      {
+        "path": "deployment/k8s/monitoring.yaml",
+        "size": 15368,
+        "modified": "2025-05-28T20:03:17.720827"
+      },
+      {
+        "path": "deployment/helm/metafunction/Chart.yaml",
+        "size": 951,
+        "modified": "2025-05-28T20:03:17.720940"
+      },
+      {
+        "path": "deployment/helm/metafunction/values.yaml",
+        "size": 3520,
+        "modified": "2025-05-28T20:03:17.720976"
+      },
+      {
+        "path": "deployment/helm/metafunction/templates/deployment.yaml",
+        "size": 3324,
+        "modified": "2025-05-28T20:03:17.721026"
+      },
+      {
+        "path": "deployment/helm/metafunction/templates/ingress.yaml",
+        "size": 1114,
+        "modified": "2025-05-28T20:03:17.721224"
+      },
+      {
+        "path": "deployment/helm/metafunction/templates/service.yaml",
+        "size": 544,
+        "modified": "2025-05-28T20:03:17.721192"
+      },
+      {
+        "path": "deployment/helm/metafunction/templates/hpa.yaml",
+        "size": 1044,
+        "modified": "2025-05-28T20:03:17.722100"
+      },
+      {
+        "path": "deployment/helm/metafunction/templates/secret.yaml",
+        "size": 566,
+        "modified": "2025-05-28T20:03:17.721182"
+      },
+      {
+        "path": "htmlcov/status.json",
+        "size": 8909,
+        "modified": "2025-05-29T01:48:55.334893"
+      }
+    ],
+    "test_files": [
+      {
+        "path": "tests/test_complete.py",
+        "size": 10635,
+        "modified": "2025-05-28T20:03:17.720805"
+      },
+      {
+        "path": "tests/unit/test_basic.py",
+        "size": 2808,
+        "modified": "2025-05-28T23:53:29.279124"
+      },
+      {
+        "path": "tests/enterprise/test_enterprise_features.py",
+        "size": 34892,
+        "modified": "2025-05-28T20:03:17.965843"
+      },
+      {
+        "path": "tests/enterprise/test_advanced_integration.py",
+        "size": 42385,
+        "modified": "2025-05-28T20:03:17.966081"
+      },
+      {
+        "path": "tests/integration/test_automation_framework.py",
+        "size": 41496,
+        "modified": "2025-05-28T23:35:32.671879"
+      },
+      {
+        "path": "templates/test_sources.html",
+        "size": 7685,
+        "modified": "2025-04-30T22:38:28.056564"
+      }
+    ]
+  },
+  "components": {
+    "documentation": [
+      {
+        "name": "Developer Onboarding",
+        "status": "documented",
+        "location": "docs/DEVELOPER_ONBOARDING.md",
+        "description": "- Python 3.8+",
+        "last_modified": "2025-05-29T02:39:15.853287",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Project Status",
+        "status": "implemented",
+        "location": "docs/PROJECT_STATUS.md",
+        "description": "**Generated:** 2025-05-29 04:32:08",
+        "last_modified": "2025-05-29T04:32:08.455884",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Development Environment Standardization",
+        "status": "implemented",
+        "location": "docs/DEVELOPMENT_ENVIRONMENT_STANDARDIZATION.md",
+        "description": "A comprehensive standardization system that ensures consistent development environments across all team members, reducing \"works on my machine\" issues and accelerating onboarding.",
+        "last_modified": "2025-05-29T02:50:24.152373",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Automated Documentation System",
+        "status": "documented",
+        "location": "docs/AUTOMATED_DOCUMENTATION_SYSTEM.md",
+        "description": "An intelligent system that automatically maintains, updates, and validates documentation across the MetaFunction repository, ensuring documentation stays current with code changes and architectural evolution.",
+        "last_modified": "2025-05-29T02:50:24.118841",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Architecture Overview",
+        "status": "pending",
+        "location": "docs/ARCHITECTURE_OVERVIEW.md",
+        "description": "MetaFunction follows a **modern, enterprise-grade, microservices-inspired** architecture built on Flask with clear separation of concerns.",
+        "last_modified": "2025-05-29T02:39:15.838560",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Quick Start Guide",
+        "status": "documented",
+        "location": "docs/QUICK_START_GUIDE.md",
+        "description": "Enterprise-grade AI-powered scientific paper analysis platform that transforms research literature into actionable insights using multiple AI backends (OpenAI, DeepSeek, Perplexity).",
+        "last_modified": "2025-05-29T02:39:15.825955",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Code Quality Dashboard",
+        "status": "documented",
+        "location": "docs/CODE_QUALITY_DASHBOARD.md",
+        "description": "A centralized dashboard for monitoring code quality, test coverage, security vulnerabilities, and performance metrics across the MetaFunction ecosystem.",
+        "last_modified": "2025-05-29T02:50:24.101160",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Finops Cost Optimization Platform",
+        "status": "pending",
+        "location": "docs/FINOPS_COST_OPTIMIZATION_PLATFORM.md",
+        "description": "An advanced financial operations platform that goes beyond basic cost monitoring to provide intelligent cost optimization, predictive budgeting, and automated cost governance for the MetaFunction enterprise infrastructure.",
+        "last_modified": "2025-05-29T02:50:24.219266",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Documentation Organization Success",
+        "status": "implemented",
+        "location": "docs/DOCUMENTATION_ORGANIZATION_SUCCESS.md",
+        "description": "**\ud83d\udcca Organization Metrics:**",
+        "last_modified": "2025-05-29T01:43:26.715911",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Readme",
+        "status": "documented",
+        "location": "docs/README.md",
+        "description": "This directory contains all documentation for the MetaFunction project, organized for easy navigation and reference.",
+        "last_modified": "2025-05-29T02:39:15.816491",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Intelligent Testing Strategy",
+        "status": "documented",
+        "location": "docs/INTELLIGENT_TESTING_STRATEGY.md",
+        "description": "An advanced testing strategy that leverages AI and automation to optimize test execution, identify critical test scenarios, and maintain high code quality with minimal manual intervention.",
+        "last_modified": "2025-05-29T02:50:24.108827",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Platform Resilience Chaos Engineering",
+        "status": "documented",
+        "location": "docs/PLATFORM_RESILIENCE_CHAOS_ENGINEERING.md",
+        "description": "An advanced resilience engineering platform that goes beyond traditional monitoring to proactively test, validate, and improve the reliability of the MetaFunction ecosystem through controlled chaos experiments and automated resilience testing.",
+        "last_modified": "2025-05-29T02:50:24.219362",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Project Memory System",
+        "status": "implemented",
+        "location": "docs/PROJECT_MEMORY_SYSTEM.md",
+        "description": "A comprehensive system to track, document, and maintain institutional memory of all work completed on the MetaFunction project, ensuring nothing is forgotten and providing context for future development decisions.",
+        "last_modified": "2025-05-29T03:09:20.066257",
+        "dependencies": null,
+        "implementation_notes": ""
+      },
+      {
+        "name": "Change History Summary",
+        "status": "implemented",
+        "location": "docs/CHANGE_HISTORY_SUMMARY.md",
+        "description": "This document provides a **high-level overview** of all major changes, improvements, and transformations made to the MetaFunction repository. Perfect for understanding the evolution without reading detailed git logs.",
+        "last_modified": "2025-05-29T02:39:15.867008",
+        "dependencies": null,
+        "implementation_notes": ""
+      }
+    ],
+    "code_modules": [
+      {
+        "name": "Module: config",
+        "status": "implemented",
+        "location": "app/config.py",
+        "description": "Classes: Config:, DevelopmentConfig, ProductionConfig. Functions: init_app, init_app, get_config",
+        "last_modified": "2025-05-28T02:56:46.907902",
+        "dependencies": null,
+        "implementation_notes": "4 classes, 3 functions"
+      },
+      {
+        "name": "Module: main",
+        "status": "implemented",
+        "location": "app/main.py",
+        "description": "Classes: . Functions: create_app, main",
+        "last_modified": "2025-05-28T02:56:46.907923",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 2 functions"
+      },
+      {
+        "name": "Module: base_client",
+        "status": "implemented",
+        "location": "app/clients/base_client.py",
+        "description": "Classes: BaseAIClient. Functions: get_response, is_available, get_config_error_message",
+        "last_modified": "2025-05-28T02:43:29.603971",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 3 functions"
+      },
+      {
+        "name": "Module: deepseek_client",
+        "status": "implemented",
+        "location": "app/clients/deepseek_client.py",
+        "description": "Classes: DeepSeekClient. Functions: get_response, is_available",
+        "last_modified": "2025-05-28T02:43:29.604026",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 2 functions"
+      },
+      {
+        "name": "Module: perplexity_client",
+        "status": "implemented",
+        "location": "app/clients/perplexity_client.py",
+        "description": "Classes: PerplexityClient. Functions: get_response, is_available",
+        "last_modified": "2025-05-28T02:43:29.604016",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 2 functions"
+      },
+      {
+        "name": "Module: openai_client",
+        "status": "implemented",
+        "location": "app/clients/openai_client.py",
+        "description": "Classes: OpenAIClient. Functions: get_response, is_available",
+        "last_modified": "2025-05-29T03:22:07.870862",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 2 functions"
+      },
+      {
+        "name": "Module: validators",
+        "status": "implemented",
+        "location": "app/utils/validators.py",
+        "description": "Classes: . Functions: validate_request_data, validate_model_name, validate_query",
+        "last_modified": "2025-05-28T02:56:46.913533",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 6 functions"
+      },
+      {
+        "name": "Module: exceptions",
+        "status": "implemented",
+        "location": "app/utils/exceptions.py",
+        "description": "Classes: MetaFunctionError, ModelNotFoundError, APIError. Functions: register_error_handlers, handle_validation_error, handle_model_not_found_error",
+        "last_modified": "2025-05-28T03:00:27.224711",
+        "dependencies": null,
+        "implementation_notes": "6 classes, 11 functions"
+      },
+      {
+        "name": "Module: web",
+        "status": "implemented",
+        "location": "app/routes/web.py",
+        "description": "Classes: . Functions: index, chat, download_log",
+        "last_modified": "2025-05-28T20:21:13.265469",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 9 functions"
+      },
+      {
+        "name": "Module: api",
+        "status": "implemented",
+        "location": "app/routes/api.py",
+        "description": "Classes: . Functions: get_models, analyze_paper, resolve_paper",
+        "last_modified": "2025-05-28T02:12:16.975084",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 8 functions"
+      },
+      {
+        "name": "Module: ai_service",
+        "status": "implemented",
+        "location": "app/services/ai_service.py",
+        "description": "Classes: AIService:. Functions: get_available_models, get_response, validate_model",
+        "last_modified": "2025-05-28T02:12:16.987616",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 7 functions"
+      },
+      {
+        "name": "Module: logging_service",
+        "status": "implemented",
+        "location": "app/services/logging_service.py",
+        "description": "Classes: LoggingService:. Functions: setup_logging, log_chat, log_metadata",
+        "last_modified": "2025-05-28T02:56:46.922304",
+        "dependencies": null,
+        "implementation_notes": "1 classes, 9 functions"
+      },
+      {
+        "name": "Module: paper_service",
+        "status": "implemented",
+        "location": "app/services/paper_service.py",
+        "description": "Classes: PaperResult:, PaperService:. Functions: has_content, primary_text, to_dict",
+        "last_modified": "2025-05-28T14:50:33.523074",
+        "dependencies": null,
+        "implementation_notes": "2 classes, 8 functions"
+      },
+      {
+        "name": "Module: institutional_access",
+        "status": "implemented",
+        "location": "resolvers/institutional_access.py",
+        "description": "Classes: . Functions: get_institutional_credentials, build_proxy_url, extract_text_with_institutional_access",
+        "last_modified": "2025-05-28T14:50:33.550957",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 4 functions"
+      },
+      {
+        "name": "Module: browser_pdf_extractor",
+        "status": "implemented",
+        "location": "resolvers/browser_pdf_extractor.py",
+        "description": "Classes: . Functions: extract_pdf_with_browser, extract_pdf_with_external_service, extract_aacr_html_text",
+        "last_modified": "2025-05-28T20:47:49.342028",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 3 functions"
+      },
+      {
+        "name": "Module: scihub",
+        "status": "implemented",
+        "location": "resolvers/scihub.py",
+        "description": "Classes: . Functions: fetch_from_scihub",
+        "last_modified": "2025-05-28T20:47:49.341986",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 1 functions"
+      },
+      {
+        "name": "Module: pdf_extractor",
+        "status": "implemented",
+        "location": "resolvers/pdf_extractor.py",
+        "description": "Classes: . Functions: extract_with_pdfplumber, extract_with_pymupdf, extract_with_pdfminer",
+        "last_modified": "2025-05-01T01:16:52.488222",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 8 functions"
+      },
+      {
+        "name": "Module: google_scholar",
+        "status": "implemented",
+        "location": "resolvers/google_scholar.py",
+        "description": "Classes: . Functions: search_google_scholar, get_fulltext_via_google_scholar",
+        "last_modified": "2025-05-28T14:50:33.523793",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 2 functions"
+      },
+      {
+        "name": "Module: full_text_resolver",
+        "status": "implemented",
+        "location": "resolvers/full_text_resolver.py",
+        "description": "Classes: . Functions: validate_pmid, validate_doi, fetch_pubmed_abstract",
+        "last_modified": "2025-05-28T20:47:49.340805",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 40 functions"
+      },
+      {
+        "name": "Module: decorators",
+        "status": "implemented",
+        "location": "resolvers/decorators.py",
+        "description": "Classes: . Functions: retry_request, wrapper",
+        "last_modified": "2025-05-01T01:16:52.140245",
+        "dependencies": null,
+        "implementation_notes": "0 classes, 2 functions"
+      }
+    ]
+  },
+  "git_context": {
+    "current_branch": "main",
+    "recent_commits": [
+      "adc2cc3 docs: Update project memory after git remotes cleanup",
+      "f3d46c4 docs: Update project status and clean git remotes configuration",
+      "fc0eeaf security: Remove GitHub Personal Access Tokens from project memory",
+      "d06706e fix: Resolve OpenAI client compatibility and PyMuPDF issues",
+      "7e056ee Fix: Resolve OpenAI client initialization and PyMuPDF issues",
+      "a3d46d0 feat: Implement Project Memory System and improve OpenAI client error handling",
+      "da064e6 feat: Add comprehensive enterprise enhancement documentation",
+      "f5943f6 \ud83d\udcdd Final Update: Correct virtual environment setup in README",
+      "8ba2680 \ud83c\udfaf COMPLETE: Virtual environment cleanup and final organization",
+      "f8fe4d4 \ud83d\udcda ORGANIZATION: Create comprehensive documentation structure"
+    ],
+    "changed_files": [],
+    "remotes": [
+      "sanjeevarddodlapati\thttps://github.com/SanjeevaRDodlapati/MetaFunction.git (fetch)",
+      "sanjeevarddodlapati\thttps://github.com/SanjeevaRDodlapati/MetaFunction.git (push)",
+      "sdodlapa\thttps://github.com/sdodlapa/MetaFunction.git (fetch)",
+      "sdodlapa\thttps://github.com/sdodlapa/MetaFunction.git (push)",
+      "sdodlapati3\thttps://github.com/sdodlapati3/MetaFunction.git (fetch)",
+      "sdodlapati3\thttps://github.com/sdodlapati3/MetaFunction.git (push)"
+    ],
+    "last_updated": "2025-05-29T04:34:51.492088"
+  },
+  "statistics": {
+    "total_documentation_files": 58,
+    "total_code_files": 46,
+    "total_test_files": 6,
+    "total_components": 34
+  },
+  "health_check": {
+    "overall_status": "degraded",
+    "issues": [
+      "Missing key file: requirements.txt"
+    ],
+    "recommendations": []
+  }
+}
