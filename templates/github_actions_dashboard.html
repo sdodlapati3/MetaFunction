@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Actions Dashboard - MetaFunction</title>
+  
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-dark: #1d4ed8;
+      --secondary-color: #64748b;
+      --success-color: #059669;
+      --warning-color: #d97706;
+      --error-color: #dc2626;
+      --background-color: #f8fafc;
+      --surface-color: #ffffff;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--background-color);
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .header p {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+    }
+
+    .nav-links {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .nav-links a {
+      display: inline-block;
+      margin: 0 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--primary-color);
+      color: white;
+      text-decoration: none;
+      border-radius: 0.5rem;
+      transition: background-color 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: var(--primary-dark);
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+
+    @media (min-width: 1024px) {
+      .dashboard-grid {
+        grid-template-columns: 2fr 1fr;
+      }
+    }
+
+    .card {
+      background: var(--surface-color);
+      border-radius: 1rem;
+      box-shadow: var(--shadow-lg);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-indicator {
+      width: 0.75rem;
+      height: 0.75rem;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-success { background: var(--success-color); }
+    .status-warning { background: var(--warning-color); }
+    .status-error { background: var(--error-color); }
+    .status-unknown { background: var(--secondary-color); }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .status-card {
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .status-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+    }
+
+    .status-count {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .status-count.success { color: var(--success-color); }
+    .status-count.warning { color: var(--warning-color); }
+    .status-count.error { color: var(--error-color); }
+
+    .validation-section {
+      margin-bottom: 2rem;
+    }
+
+    .validation-section h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .validation-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .validation-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.9rem;
+    }
+
+    .validation-item:last-child {
+      border-bottom: none;
+    }
+
+    .validation-item .status {
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+    }
+
+    .validation-item .status.valid,
+    .validation-item .status.configured,
+    .validation-item .status.complete,
+    .validation-item .status.exists {
+      color: var(--success-color);
+    }
+
+    .validation-item .status.missing,
+    .validation-item .status.invalid,
+    .validation-item .status.incomplete {
+      color: var(--warning-color);
+    }
+
+    .validation-item .status.error {
+      color: var(--error-color);
+    }
+
+    .workflow-runs {
+      margin-top: 2rem;
+    }
+
+    .workflow-run {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      margin-bottom: 0.5rem;
+      background: var(--surface-color);
+    }
+
+    .workflow-run:last-child {
+      margin-bottom: 0;
+    }
+
+    .run-status {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 50%;
+    }
+
+    .run-status.success { background: var(--success-color); }
+    .run-status.failure { background: var(--error-color); }
+    .run-status.in_progress { background: var(--warning-color); }
+    .run-status.unknown { background: var(--secondary-color); }
+
+    .run-info {
+      flex: 1;
+    }
+
+    .run-name {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .run-details {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .run-link {
+      color: var(--primary-color);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .run-link:hover {
+      text-decoration: underline;
+    }
+
+    .timestamp {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .refresh-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      text-decoration: none;
+    }
+
+    .refresh-button:hover {
+      background: var(--primary-dark);
+    }
+
+    .error-message {
+      background: #fef2f2;
+      color: #991b1b;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      border: 1px solid #fecaca;
+      margin-bottom: 1rem;
+    }
+
+    .info-sidebar {
+      background: var(--surface-color);
+      border-radius: 1rem;
+      box-shadow: var(--shadow-lg);
+      padding: 1.5rem;
+      height: fit-content;
+    }
+
+    .info-sidebar h3 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+    }
+
+    .info-item {
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .info-item:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .info-item h4 {
+      font-weight: 600;
+      color: var(--primary-color);
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .info-item p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .auto-refresh {
+      margin-left: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+  </style>
+  
+  <script>
+    // Auto-refresh every 5 minutes
+    setTimeout(() => {
+      window.location.reload();
+    }, 300000);
+    
+    // Show last updated time
+    function updateTimestamp() {
+      const now = new Date();
+      const timestamp = document.querySelector('.current-time');
+      if (timestamp) {
+        timestamp.textContent = now.toLocaleString();
+      }
+    }
+    
+    document.addEventListener('DOMContentLoaded', updateTimestamp);
+  </script>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🚀 GitHub Actions Dashboard</h1>
+      <p>CI/CD Pipeline Status for MetaFunction</p>
+    </header>
+
+    <!-- Navigation -->
+    <div class="nav-links">
+      <a href="/">← Back to MetaFunction</a>
+      <a href="/github-actions" class="refresh-button">🔄 Refresh Status</a>
+      <span class="auto-refresh">Auto-refresh: 5min</span>
+    </div>
+
+    <!-- Error Display -->
+    {% if report.error %}
+    <div class="error-message">
+      <strong>⚠️ Dashboard Error:</strong> {{ report.error }}
+    </div>
+    {% endif %}
+
+    <!-- Main Dashboard -->
+    <div class="dashboard-grid">
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Status Overview -->
+        <div class="card">
+          <h2>📊 Status Overview</h2>
+          <div class="status-grid">
+            <div class="status-card">
+              <h3>Workflow Syntax</h3>
+              <div class="status-count {% if report.validation_results.syntax %}{% set valid_count = report.validation_results.syntax | selectattr('status', 'equalto', 'valid') | list | length %}{% if valid_count == report.validation_results.syntax | length %}success{% elif valid_count > 0 %}warning{% else %}error{% endif %}{% else %}error{% endif %}">
+                {% if report.validation_results.syntax %}
+                  {% set valid_count = report.validation_results.syntax | selectattr('status', 'equalto', 'valid') | list | length %}
+                  {{ valid_count }}/{{ report.validation_results.syntax | length }}
+                {% else %}
+                  0/0
+                {% endif %}
+              </div>
+              <small>Valid workflows</small>
+            </div>
+            
+            <div class="status-card">
+              <h3>Secrets</h3>
+              <div class="status-count {% if report.validation_results.secrets %}{% set configured_count = report.validation_results.secrets | selectattr('status', 'equalto', 'configured') | list | length %}{% if configured_count == report.validation_results.secrets | length %}success{% elif configured_count > 0 %}warning{% else %}error{% endif %}{% else %}error{% endif %}">
+                {% if report.validation_results.secrets %}
+                  {% set configured_count = report.validation_results.secrets | selectattr('status', 'equalto', 'configured') | list | length %}
+                  {{ configured_count }}/{{ report.validation_results.secrets | length }}
+                {% else %}
+                  ?/?
+                {% endif %}
+              </div>
+              <small>Configured secrets</small>
+            </div>
+            
+            <div class="status-card">
+              <h3>Test Files</h3>
+              <div class="status-count {% if report.validation_results.test_files %}{% set exists_count = report.validation_results.test_files | selectattr('status', 'equalto', 'exists') | list | length %}{% if exists_count == report.validation_results.test_files | length %}success{% elif exists_count > 0 %}warning{% else %}error{% endif %}{% else %}error{% endif %}">
+                {% if report.validation_results.test_files %}
+                  {% set exists_count = report.validation_results.test_files | selectattr('status', 'equalto', 'exists') | list | length %}
+                  {{ exists_count }}/{{ report.validation_results.test_files | length }}
+                {% else %}
+                  0/0
+                {% endif %}
+              </div>
+              <small>Required test files</small>
+            </div>
+            
+            <div class="status-card">
+              <h3>Dependencies</h3>
+              <div class="status-count {% if report.validation_results.dependencies %}{% set complete_count = report.validation_results.dependencies | selectattr('status', 'equalto', 'complete') | list | length %}{% if complete_count == report.validation_results.dependencies | length %}success{% elif complete_count > 0 %}warning{% else %}error{% endif %}{% else %}error{% endif %}">
+                {% if report.validation_results.dependencies %}
+                  {% set complete_count = report.validation_results.dependencies | selectattr('status', 'equalto', 'complete') | list | length %}
+                  {{ complete_count }}/{{ report.validation_results.dependencies | length }}
+                {% else %}
+                  0/0
+                {% endif %}
+              </div>
+              <small>Dependency files</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workflow Syntax Validation -->
+        <div class="card validation-section">
+          <h3>📝 Workflow Syntax Validation</h3>
+          <ul class="validation-list">
+            {% for result in report.validation_results.syntax %}
+            <li class="validation-item">
+              <span class="status-indicator status-{% if result.status == 'valid' %}success{% elif result.status == 'invalid' %}error{% elif result.status == 'error' %}error{% else %}unknown{% endif %}"></span>
+              <span class="status {{ result.status }}">{{ result.status }}</span>
+              <span>{{ result.file or 'Unknown file' }}: {{ result.message }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Secrets Validation -->
+        <div class="card validation-section">
+          <h3>🔐 Required Secrets</h3>
+          <ul class="validation-list">
+            {% for result in report.validation_results.secrets %}
+            <li class="validation-item">
+              <span class="status-indicator status-{% if result.status == 'configured' %}success{% elif result.status == 'missing' %}warning{% elif result.status == 'error' %}error{% else %}unknown{% endif %}"></span>
+              <span class="status {{ result.status }}">{{ result.status }}</span>
+              <span>{{ result.secret or 'Unknown secret' }}: {{ result.message }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Test Files -->
+        <div class="card validation-section">
+          <h3>🧪 Required Test Files</h3>
+          <ul class="validation-list">
+            {% for result in report.validation_results.test_files %}
+            <li class="validation-item">
+              <span class="status-indicator status-{% if result.status == 'exists' %}success{% elif result.status == 'missing' %}warning{% else %}error{% endif %}"></span>
+              <span class="status {{ result.status }}">{{ result.status }}</span>
+              <span>{{ result.file }}: {{ result.message }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Dependencies -->
+        <div class="card validation-section">
+          <h3>📦 Dependencies</h3>
+          <ul class="validation-list">
+            {% for result in report.validation_results.dependencies %}
+            <li class="validation-item">
+              <span class="status-indicator status-{% if result.status == 'complete' %}success{% elif result.status == 'incomplete' %}warning{% else %}error{% endif %}"></span>
+              <span class="status {{ result.status }}">{{ result.status }}</span>
+              <span>{{ result.file }}: {{ result.message }}</span>
+              {% if result.missing %}
+              <div style="margin-left: 2rem; font-size: 0.8rem; color: var(--warning-color);">
+                Missing: {{ result.missing | join(', ') }}
+              </div>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <!-- Recent Workflow Runs -->
+        {% if report.recent_runs and report.recent_runs | length > 0 and 'status' not in report.recent_runs[0] %}
+        <div class="card">
+          <h2>📊 Recent Workflow Runs</h2>
+          <div class="workflow-runs">
+            {% for run in report.recent_runs %}
+            <div class="workflow-run">
+              <div class="run-status {{ run.conclusion or 'unknown' }}"></div>
+              <div class="run-info">
+                <div class="run-name">{{ run.workflow_name }}</div>
+                <div class="run-details">
+                  Branch: {{ run.branch }} • Commit: {{ run.commit_sha }} • {{ run.conclusion or 'running' }}
+                </div>
+              </div>
+              {% if run.html_url %}
+              <a href="{{ run.html_url }}" target="_blank" class="run-link">View Details →</a>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Sidebar -->
+      <div class="info-sidebar">
+        <h3>ℹ️ Dashboard Information</h3>
+        
+        <div class="info-item">
+          <h4>Repository</h4>
+          <p>{{ report.repository }}</p>
+        </div>
+        
+        <div class="info-item">
+          <h4>Last Updated</h4>
+          <p>{{ report.timestamp }}</p>
+        </div>
+        
+        <div class="info-item">
+          <h4>Auto Refresh</h4>
+          <p>Dashboard refreshes automatically every 5 minutes</p>
+        </div>
+        
+        <div class="info-item">
+          <h4>Status Indicators</h4>
+          <p>
+            <span class="status-indicator status-success"></span> Success/Valid<br>
+            <span class="status-indicator status-warning"></span> Warning/Missing<br>
+            <span class="status-indicator status-error"></span> Error/Failed<br>
+            <span class="status-indicator status-unknown"></span> Unknown/Pending
+          </p>
+        </div>
+        
+        <div class="info-item">
+          <h4>Quick Actions</h4>
+          <p>
+            <a href="/github-actions" style="color: var(--primary-color);">Refresh Status</a><br>
+            <a href="/" style="color: var(--primary-color);">Back to Main App</a><br>
+            <a href="/health" style="color: var(--primary-color);">System Health</a>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="timestamp">
+      Last updated: <span class="current-time"></span> • Repository: {{ report.repository }}
+    </div>
+  </div>
+</body>
+</html>

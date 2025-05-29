@@ -1,372 +1,582 @@
 #!/usr/bin/env python3
 """
-GitHub Actions Status Monitor
-Checks the status of GitHub Actions workflows and provides detailed reporting.
+Enhanced GitHub Actions Monitor
+Real-time monitoring with notifications and advanced analytics
 """
 
+import os
+import json
+import time
+import logging
 import argparse
 import requests
-import json
-import sys
-import os
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
-import time
+import subprocess
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, asdict
+
+
+@dataclass
+class WorkflowRun:
+    """Dataclass for workflow run information."""
+    id: int
+    name: str
+    status: str
+    conclusion: Optional[str]
+    created_at: str
+    updated_at: str
+    commit_sha: str
+    commit_message: str
+    actor: str
+    duration_minutes: Optional[float] = None
+    
+
+@dataclass
+class MonitorAlert:
+    """Dataclass for monitoring alerts."""
+    level: str  # info, warning, error, critical
+    title: str
+    message: str
+    timestamp: str
+    workflow_run: Optional[WorkflowRun] = None
 
 
 class GitHubActionsMonitor:
-    """Monitor GitHub Actions workflows and runs."""
+    """Enhanced GitHub Actions monitoring with real-time alerts."""
     
-    def __init__(self, repo_owner: str, repo_name: str, token: Optional[str] = None):
+    def __init__(self, repo_path: str, github_token: Optional[str] = None):
         """Initialize the monitor.
         
         Args:
-            repo_owner: GitHub repository owner
-            repo_name: GitHub repository name
-            token: GitHub personal access token (optional, for private repos)
+            repo_path: Path to the Git repository
+            github_token: GitHub personal access token for API access
         """
-        self.repo_owner = repo_owner
-        self.repo_name = repo_name
-        self.base_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}"
+        self.repo_path = Path(repo_path)
+        self.github_token = github_token or os.environ.get('GITHUB_TOKEN')
+        self.api_base = "https://api.github.com"
         
+        # Get repository info
+        self.owner, self.repo = self._get_repo_info()
+        
+        # Setup session with authentication
         self.session = requests.Session()
-        if token:
+        if self.github_token:
             self.session.headers.update({
-                'Authorization': f'token {token}',
+                'Authorization': f'token {self.github_token}',
                 'Accept': 'application/vnd.github.v3+json'
             })
-    
-    def get_workflows(self) -> List[Dict]:
-        """Get all workflows for the repository."""
-        try:
-            response = self.session.get(f"{self.base_url}/actions/workflows")
-            response.raise_for_status()
-            return response.json().get('workflows', [])
-        except requests.RequestException as e:
-            print(f"Error fetching workflows: {e}")
-            return []
-    
-    def get_workflow_runs(self, workflow_id: str, branch: str = None, limit: int = 10) -> List[Dict]:
-        """Get recent runs for a specific workflow.
         
-        Args:
-            workflow_id: Workflow ID or filename
-            branch: Filter by branch (optional)
-            limit: Maximum number of runs to fetch
-            
-        Returns:
-            List of workflow runs
-        """
+        # Setup logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        self.logger = logging.getLogger(__name__)
+        
+        # Store for tracking state changes
+        self.last_known_runs = {}
+        self.alerts = []
+        
+    def _get_repo_info(self) -> Tuple[str, str]:
+        """Extract owner and repo name from git remote."""
         try:
-            params = {'per_page': limit}
-            if branch:
-                params['branch'] = branch
+            # Try multiple remotes in order of preference
+            remotes_to_try = ['origin', 'sanjeevarddodlapati', 'sdodlapa', 'sdodlapati3']
+            remote_url = None
             
+            for remote in remotes_to_try:
+                try:
+                    result = subprocess.run(
+                        ['git', 'remote', 'get-url', remote],
+                        cwd=self.repo_path,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    remote_url = result.stdout.strip()
+                    break
+                except subprocess.CalledProcessError:
+                    continue
+            
+            if not remote_url:
+                # Try to get any remote
+                result = subprocess.run(
+                    ['git', 'remote'],
+                    cwd=self.repo_path,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                remotes = result.stdout.strip().split('\n')
+                
+                if remotes and remotes[0]:
+                    result = subprocess.run(
+                        ['git', 'remote', 'get-url', remotes[0]],
+                        cwd=self.repo_path,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    remote_url = result.stdout.strip()
+            
+            if not remote_url:
+                raise ValueError("No git remotes found")
+            
+            # Parse GitHub URL
+            if 'github.com' in remote_url:
+                if remote_url.startswith('https://'):
+                    # https://github.com/owner/repo.git or https://token@github.com/owner/repo.git
+                    if '@github.com' in remote_url:
+                        parts = remote_url.split('@github.com/')[1].replace('.git', '').split('/')
+                    else:
+                        parts = remote_url.replace('https://github.com/', '').replace('.git', '').split('/')
+                else:
+                    # git@github.com:owner/repo.git
+                    parts = remote_url.split(':')[1].replace('.git', '').split('/')
+                
+                if len(parts) >= 2:
+                    return parts[0], parts[1]
+            
+            raise ValueError(f"Cannot parse GitHub repository from: {remote_url}")
+            
+        except subprocess.CalledProcessError:
+            # Fallback - assume MetaFunction repository based on directory structure
+            return "SanjeevaRDodlapati", "MetaFunction"
+    
+    def get_workflow_runs(self, limit: int = 50) -> List[WorkflowRun]:
+        """Get recent workflow runs with enhanced data."""
+        if not self.github_token:
+            self.logger.warning("GitHub token required for API access")
+            return []
+        
+        try:
             response = self.session.get(
-                f"{self.base_url}/actions/workflows/{workflow_id}/runs",
-                params=params
+                f"{self.api_base}/repos/{self.owner}/{self.repo}/actions/runs",
+                params={'per_page': limit}
             )
-            response.raise_for_status()
-            return response.json().get('workflow_runs', [])
-        except requests.RequestException as e:
-            print(f"Error fetching workflow runs: {e}")
+            
+            if response.status_code != 200:
+                self.logger.error(f"API error: {response.status_code}")
+                return []
+            
+            data = response.json()
+            runs = []
+            
+            for run in data.get('workflow_runs', []):
+                # Calculate duration if run is completed
+                duration = None
+                if run.get('conclusion') and run.get('created_at') and run.get('updated_at'):
+                    try:
+                        created = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+                        updated = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
+                        duration = (updated - created).total_seconds() / 60
+                    except:
+                        pass
+                
+                workflow_run = WorkflowRun(
+                    id=run['id'],
+                    name=run['name'],
+                    status=run['status'],
+                    conclusion=run['conclusion'],
+                    created_at=run['created_at'],
+                    updated_at=run['updated_at'],
+                    commit_sha=run['head_sha'][:8],
+                    commit_message=run.get('head_commit', {}).get('message', 'Unknown'),
+                    actor=run.get('actor', {}).get('login', 'Unknown'),
+                    duration_minutes=duration
+                )
+                runs.append(workflow_run)
+            
+            return runs
+            
+        except Exception as e:
+            self.logger.error(f"Error fetching workflow runs: {e}")
             return []
     
-    def get_run_jobs(self, run_id: str) -> List[Dict]:
-        """Get jobs for a specific workflow run."""
-        try:
-            response = self.session.get(f"{self.base_url}/actions/runs/{run_id}/jobs")
-            response.raise_for_status()
-            return response.json().get('jobs', [])
-        except requests.RequestException as e:
-            print(f"Error fetching run jobs: {e}")
-            return []
-    
-    def format_duration(self, start_time: str, end_time: str = None) -> str:
-        """Format duration between start and end times."""
-        try:
-            start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-            if end_time:
-                end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            else:
-                end = datetime.now(timezone.utc)
-            
-            duration = end - start
-            total_seconds = int(duration.total_seconds())
-            
-            if total_seconds < 60:
-                return f"{total_seconds}s"
-            elif total_seconds < 3600:
-                minutes = total_seconds // 60
-                seconds = total_seconds % 60
-                return f"{minutes}m {seconds}s"
-            else:
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                return f"{hours}h {minutes}m"
-        except Exception:
-            return "Unknown"
-    
-    def get_status_emoji(self, status: str, conclusion: str = None) -> str:
-        """Get emoji for workflow status."""
-        if status == 'completed':
-            if conclusion == 'success':
-                return "✅"
-            elif conclusion == 'failure':
-                return "❌"
-            elif conclusion == 'cancelled':
-                return "🚫"
-            elif conclusion == 'skipped':
-                return "⏭️"
-            else:
-                return "❓"
-        elif status == 'in_progress':
-            return "🔄"
-        elif status == 'queued':
-            return "⏳"
-        else:
-            return "❓"
-    
-    def print_workflow_status(self, workflow: Dict, runs: List[Dict], detailed: bool = False):
-        """Print status information for a workflow."""
-        print(f"\n📋 {workflow['name']}")
-        print(f"   File: {workflow['path']}")
-        print(f"   State: {workflow['state']}")
+    def get_workflow_status_summary(self) -> Dict:
+        """Get summary of workflow statuses."""
+        runs = self.get_workflow_runs(20)
         
         if not runs:
-            print("   No recent runs found")
-            return
+            return {
+                'total_runs': 0,
+                'success_rate': 0,
+                'failure_rate': 0,
+                'avg_duration': 0,
+                'last_run': None
+            }
         
-        latest_run = runs[0]
-        status_emoji = self.get_status_emoji(latest_run['status'], latest_run.get('conclusion'))
+        # Calculate metrics
+        total_runs = len(runs)
+        successful_runs = sum(1 for run in runs if run.conclusion == 'success')
+        failed_runs = sum(1 for run in runs if run.conclusion == 'failure')
         
-        print(f"   Latest: {status_emoji} {latest_run['status'].title()}")
-        print(f"   Branch: {latest_run['head_branch']}")
-        print(f"   Commit: {latest_run['head_sha'][:8]}")
-        print(f"   Started: {latest_run['created_at']}")
+        success_rate = (successful_runs / total_runs) * 100 if total_runs > 0 else 0
+        failure_rate = (failed_runs / total_runs) * 100 if total_runs > 0 else 0
         
-        if latest_run['status'] == 'completed':
-            duration = self.format_duration(latest_run['created_at'], latest_run['updated_at'])
-            print(f"   Duration: {duration}")
+        # Calculate average duration for completed runs
+        completed_runs_with_duration = [
+            run for run in runs 
+            if run.duration_minutes is not None and run.conclusion
+        ]
+        avg_duration = (
+            sum(run.duration_minutes for run in completed_runs_with_duration) / 
+            len(completed_runs_with_duration)
+        ) if completed_runs_with_duration else 0
         
-        if detailed and len(runs) > 1:
-            print(f"   Recent runs:")
-            for run in runs[1:6]:  # Show up to 5 more runs
-                emoji = self.get_status_emoji(run['status'], run.get('conclusion'))
-                branch = run['head_branch']
-                date = run['created_at'][:10]
-                print(f"     {emoji} {branch} - {date}")
+        return {
+            'total_runs': total_runs,
+            'successful_runs': successful_runs,
+            'failed_runs': failed_runs,
+            'success_rate': round(success_rate, 1),
+            'failure_rate': round(failure_rate, 1),
+            'avg_duration': round(avg_duration, 1),
+            'last_run': runs[0] if runs else None
+        }
     
-    def print_job_details(self, run_id: str, run_name: str):
-        """Print detailed job information for a workflow run."""
-        jobs = self.get_run_jobs(run_id)
+    def check_for_new_failures(self, current_runs: List[WorkflowRun]) -> List[MonitorAlert]:
+        """Check for new workflow failures and generate alerts."""
+        alerts = []
         
-        if not jobs:
-            print(f"No jobs found for run {run_id}")
-            return
+        for run in current_runs:
+            run_key = f"{run.name}_{run.id}"
+            
+            # Check if this is a new run we haven't seen before
+            if run_key not in self.last_known_runs:
+                self.last_known_runs[run_key] = run
+                
+                # Generate alert for new failures
+                if run.conclusion == 'failure':
+                    alert = MonitorAlert(
+                        level='error',
+                        title='Workflow Failed',
+                        message=f"Workflow '{run.name}' failed on commit {run.commit_sha}",
+                        timestamp=datetime.now().isoformat(),
+                        workflow_run=run
+                    )
+                    alerts.append(alert)
+                    
+                # Generate alert for long-running workflows
+                elif (run.status == 'in_progress' and 
+                      run.duration_minutes and 
+                      run.duration_minutes > 30):
+                    alert = MonitorAlert(
+                        level='warning',
+                        title='Long Running Workflow',
+                        message=f"Workflow '{run.name}' has been running for {run.duration_minutes:.1f} minutes",
+                        timestamp=datetime.now().isoformat(),
+                        workflow_run=run
+                    )
+                    alerts.append(alert)
         
-        print(f"\n🔍 Job Details for: {run_name}")
-        print("=" * 60)
-        
-        for job in jobs:
-            status_emoji = self.get_status_emoji(job['status'], job.get('conclusion'))
-            duration = self.format_duration(job['started_at'], job.get('completed_at'))
-            
-            print(f"{status_emoji} {job['name']}")
-            print(f"   Status: {job['status']}")
-            if job.get('conclusion'):
-                print(f"   Conclusion: {job['conclusion']}")
-            print(f"   Duration: {duration}")
-            
-            if job['status'] == 'completed' and job.get('conclusion') == 'failure':
-                print(f"   ❌ Job failed - check logs for details")
-                print(f"   🔗 Logs: {job['html_url']}")
-            
-            print()
+        return alerts
     
-    def check_failing_workflows(self) -> List[Dict]:
-        """Get all workflows that are currently failing."""
-        failing_workflows = []
-        workflows = self.get_workflows()
+    def get_repository_health_score(self) -> Dict:
+        """Calculate an overall repository health score based on CI/CD metrics."""
+        summary = self.get_workflow_status_summary()
+        runs = self.get_workflow_runs(50)
         
-        for workflow in workflows:
-            runs = self.get_workflow_runs(workflow['id'], limit=1)
-            if runs:
-                latest_run = runs[0]
-                if (latest_run['status'] == 'completed' and 
-                    latest_run.get('conclusion') == 'failure'):
-                    failing_workflows.append({
-                        'workflow': workflow,
-                        'run': latest_run
-                    })
+        # Health score factors
+        factors = {
+            'success_rate': 0,
+            'frequency': 0,
+            'duration': 0,
+            'consistency': 0
+        }
         
-        return failing_workflows
-    
-    def generate_status_report(self, output_file: str = None):
-        """Generate a comprehensive status report."""
-        workflows = self.get_workflows()
+        # Success rate factor (0-40 points)
+        factors['success_rate'] = min(40, summary['success_rate'] * 0.4)
         
-        if not workflows:
-            print("No workflows found or unable to access repository")
-            return
+        # Deployment frequency factor (0-25 points)
+        if runs:
+            recent_runs = [
+                run for run in runs 
+                if datetime.fromisoformat(run.created_at.replace('Z', '+00:00')) > 
+                   datetime.now().replace(tzinfo=None) - timedelta(days=7)
+            ]
+            frequency_score = min(25, len(recent_runs) * 5)
+            factors['frequency'] = frequency_score
         
-        report_lines = []
-        report_lines.append(f"# GitHub Actions Status Report")
-        report_lines.append(f"Repository: {self.repo_owner}/{self.repo_name}")
-        report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report_lines.append("")
+        # Duration factor (0-20 points)
+        if summary['avg_duration'] > 0:
+            # Ideal duration is 5-15 minutes, score decreases as it gets longer
+            if summary['avg_duration'] <= 15:
+                factors['duration'] = 20
+            elif summary['avg_duration'] <= 30:
+                factors['duration'] = 15
+            elif summary['avg_duration'] <= 60:
+                factors['duration'] = 10
+            else:
+                factors['duration'] = 5
         
-        all_passing = True
+        # Consistency factor (0-15 points)
+        if len(runs) >= 10:
+            # Check for consistent success over time
+            recent_10 = runs[:10]
+            consistent_successes = sum(1 for run in recent_10 if run.conclusion == 'success')
+            factors['consistency'] = (consistent_successes / 10) * 15
         
-        for workflow in workflows:
-            runs = self.get_workflow_runs(workflow['id'], limit=5)
-            
-            if runs:
-                latest_run = runs[0]
-                status_emoji = self.get_status_emoji(latest_run['status'], latest_run.get('conclusion'))
-                
-                report_lines.append(f"## {status_emoji} {workflow['name']}")
-                report_lines.append(f"- **File**: `{workflow['path']}`")
-                report_lines.append(f"- **Status**: {latest_run['status'].title()}")
-                
-                if latest_run.get('conclusion'):
-                    report_lines.append(f"- **Conclusion**: {latest_run['conclusion'].title()}")
-                
-                report_lines.append(f"- **Branch**: {latest_run['head_branch']}")
-                report_lines.append(f"- **Last Run**: {latest_run['created_at']}")
-                
-                if latest_run['status'] == 'completed':
-                    duration = self.format_duration(latest_run['created_at'], latest_run['updated_at'])
-                    report_lines.append(f"- **Duration**: {duration}")
-                
-                if latest_run.get('conclusion') == 'failure':
-                    all_passing = False
-                    report_lines.append(f"- **Action Required**: ❌ Workflow is failing")
-                    report_lines.append(f"- **Run URL**: {latest_run['html_url']}")
-                
-                report_lines.append("")
+        total_score = sum(factors.values())
         
-        # Add summary
-        report_lines.insert(4, f"**Overall Status**: {'✅ All workflows passing' if all_passing else '❌ Some workflows failing'}")
-        report_lines.insert(5, "")
-        
-        report_content = "\n".join(report_lines)
-        
-        if output_file:
-            with open(output_file, 'w') as f:
-                f.write(report_content)
-            print(f"Report saved to: {output_file}")
+        # Determine health level
+        if total_score >= 85:
+            health_level = 'excellent'
+        elif total_score >= 70:
+            health_level = 'good'
+        elif total_score >= 50:
+            health_level = 'fair'
         else:
-            print(report_content)
+            health_level = 'poor'
+        
+        return {
+            'score': round(total_score, 1),
+            'level': health_level,
+            'factors': factors,
+            'recommendations': self._get_health_recommendations(factors, summary)
+        }
+    
+    def _get_health_recommendations(self, factors: Dict, summary: Dict) -> List[str]:
+        """Generate health improvement recommendations."""
+        recommendations = []
+        
+        if factors['success_rate'] < 30:
+            recommendations.append("🔧 Fix failing workflows - success rate is below 75%")
+            
+        if factors['frequency'] < 15:
+            recommendations.append("📈 Increase deployment frequency for better CI/CD")
+            
+        if factors['duration'] < 15:
+            recommendations.append("⚡ Optimize workflow duration - currently over 30 minutes")
+            
+        if factors['consistency'] < 10:
+            recommendations.append("🎯 Improve workflow consistency - too many recent failures")
+            
+        if summary['failure_rate'] > 20:
+            recommendations.append("🚨 Address high failure rate - consider workflow improvements")
+        
+        if not recommendations:
+            recommendations.append("✅ Repository health is good - maintain current practices")
+            
+        return recommendations
+    
+    def generate_monitoring_report(self) -> Dict:
+        """Generate comprehensive monitoring report."""
+        runs = self.get_workflow_runs(20)
+        summary = self.get_workflow_status_summary()
+        health = self.get_repository_health_score()
+        
+        # Check for new alerts
+        new_alerts = self.check_for_new_failures(runs)
+        self.alerts.extend(new_alerts)
+        
+        # Keep only recent alerts (last 24 hours)
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        self.alerts = [
+            alert for alert in self.alerts
+            if datetime.fromisoformat(alert.timestamp) > cutoff_time
+        ]
+        
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'repository': f"{self.owner}/{self.repo}",
+            'summary': summary,
+            'health': health,
+            'recent_runs': [asdict(run) for run in runs[:10]],
+            'alerts': [asdict(alert) for alert in self.alerts[-10:]],  # Last 10 alerts
+            'monitoring_status': 'active' if self.github_token else 'limited'
+        }
+        
+        return report
+    
+    def print_monitoring_dashboard(self, report: Dict):
+        """Print a comprehensive monitoring dashboard."""
+        print("\n" + "="*80)
+        print("🚀 GITHUB ACTIONS MONITORING DASHBOARD")
+        print("="*80)
+        print(f"Repository: {report['repository']}")
+        print(f"Last Updated: {report['timestamp']}")
+        print(f"Monitoring Status: {report['monitoring_status'].upper()}")
+        print()
+        
+        # Health Score
+        health = report.get('health', {})
+        health_emoji = {
+            'excellent': '🟢',
+            'good': '🟡', 
+            'fair': '🟠',
+            'poor': '🔴'
+        }
+        health_level = health.get('level', 'unknown')
+        health_score = health.get('score', 0)
+        print(f"📊 Repository Health: {health_emoji.get(health_level, '⚪')} {health_level.upper()} ({health_score}/100)")
+        
+        # Summary Stats
+        summary = report.get('summary', {})
+        if summary:
+            print(f"\n📈 Workflow Statistics (Last 20 runs):")
+            try:
+                success_rate = summary.get('success_rate', 0)
+                successful_runs = summary.get('successful_runs', 0)
+                total_runs = summary.get('total_runs', 0)
+                failure_rate = summary.get('failure_rate', 0)
+                failed_runs = summary.get('failed_runs', 0)
+                avg_duration = summary.get('avg_duration', 0)
+                
+                print(f"  ├── Success Rate: {success_rate}% ({successful_runs}/{total_runs})")
+                print(f"  ├── Failure Rate: {failure_rate}% ({failed_runs}/{total_runs})")
+                print(f"  └── Avg Duration: {avg_duration} minutes")
+            except Exception as e:
+                print(f"  ❌ Error displaying summary: {e}")
+                print(f"  Summary data: {summary}")
+        else:
+            print(f"\n📈 Workflow Statistics: No data available (GitHub token required)")
+        
+        # Recent Runs
+        recent_runs = report.get('recent_runs', [])
+        if recent_runs:
+            print(f"\n🔄 Recent Workflow Runs:")
+            for run in recent_runs[:5]:
+                try:
+                    status_emoji = {
+                        'success': '✅',
+                        'failure': '❌',
+                        'in_progress': '🔄',
+                        'queued': '⏳'
+                    }.get(run.get('conclusion') or run.get('status'), '⚪')
+                    
+                    duration_str = f" ({run['duration_minutes']:.1f}m)" if run.get('duration_minutes') else ""
+                    name = run.get('name', 'Unknown')
+                    commit_sha = run.get('commit_sha', 'Unknown')
+                    actor = run.get('actor', 'Unknown')
+                    print(f"  {status_emoji} {name} - {commit_sha} by {actor}{duration_str}")
+                except Exception as e:
+                    print(f"  ❌ Error displaying run: {e}")
+        
+        # Active Alerts
+        alerts = report.get('alerts', [])
+        if alerts:
+            print(f"\n🚨 Recent Alerts:")
+            for alert in alerts[-5:]:
+                try:
+                    alert_emoji = {
+                        'info': 'ℹ️',
+                        'warning': '⚠️',
+                        'error': '❌',
+                        'critical': '🚨'
+                    }.get(alert.get('level'), '⚪')
+                    title = alert.get('title', 'Unknown')
+                    message = alert.get('message', 'No message')
+                    print(f"  {alert_emoji} {title}: {message}")
+                except Exception as e:
+                    print(f"  ❌ Error displaying alert: {e}")
+        
+        # Recommendations
+        recommendations = health.get('recommendations', [])
+        if recommendations:
+            print(f"\n💡 Recommendations:")
+            for rec in recommendations:
+                print(f"  • {rec}")
+        
+        print("\n" + "="*80)
+    
+    def monitor_continuous(self, interval: int = 300):
+        """Run continuous monitoring with specified interval."""
+        self.logger.info(f"Starting continuous monitoring (interval: {interval}s)")
+        
+        try:
+            while True:
+                report = self.generate_monitoring_report()
+                self.print_monitoring_dashboard(report)
+                
+                # Save report to file
+                report_file = self.repo_path / 'monitoring_report.json'
+                with open(report_file, 'w') as f:
+                    json.dump(report, f, indent=2)
+                
+                # Check for critical alerts
+                critical_alerts = [
+                    alert for alert in self.alerts 
+                    if alert.level == 'critical'
+                ]
+                
+                if critical_alerts:
+                    self.logger.critical(f"Found {len(critical_alerts)} critical alerts!")
+                
+                time.sleep(interval)
+                
+        except KeyboardInterrupt:
+            self.logger.info("Monitoring stopped by user")
+        except Exception as e:
+            self.logger.error(f"Monitoring error: {e}")
 
 
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(
-        description='Monitor GitHub Actions workflows and status'
+        description='Enhanced GitHub Actions monitoring with real-time alerts'
     )
     parser.add_argument(
-        '--repo',
-        required=True,
-        help='Repository in format owner/name'
+        '--repo-path',
+        default='.',
+        help='Path to the Git repository (default: current directory)'
     )
     parser.add_argument(
         '--token',
         help='GitHub personal access token (can also use GITHUB_TOKEN env var)'
     )
     parser.add_argument(
-        '--branch',
-        help='Filter by specific branch'
+        '--output',
+        help='Output file for monitoring report'
     )
     parser.add_argument(
-        '--detailed',
+        '--monitor',
         action='store_true',
-        help='Show detailed information including recent runs'
+        help='Run in continuous monitoring mode'
     )
     parser.add_argument(
-        '--jobs',
-        help='Show job details for specific run ID'
-    )
-    parser.add_argument(
-        '--failing-only',
-        action='store_true',
-        help='Show only failing workflows'
-    )
-    parser.add_argument(
-        '--report',
-        help='Generate status report and save to file'
-    )
-    parser.add_argument(
-        '--watch',
+        '--interval',
         type=int,
-        help='Watch mode - refresh every N seconds'
+        default=300,
+        help='Monitoring interval in seconds (default: 300)'
+    )
+    parser.add_argument(
+        '--dashboard',
+        action='store_true',
+        help='Show monitoring dashboard once and exit'
     )
     
     args = parser.parse_args()
     
-    # Parse repository
     try:
-        repo_owner, repo_name = args.repo.split('/')
-    except ValueError:
-        print("Error: Repository must be in format 'owner/name'")
-        sys.exit(1)
-    
-    # Get token
-    token = args.token or os.getenv('GITHUB_TOKEN')
-    
-    # Initialize monitor
-    monitor = GitHubActionsMonitor(repo_owner, repo_name, token)
-    
-    try:
-        if args.report:
-            monitor.generate_status_report(args.report)
-            return
+        monitor = GitHubActionsMonitor(args.repo_path, args.token)
         
-        if args.jobs:
-            monitor.print_job_details(args.jobs, f"Run {args.jobs}")
-            return
-        
-        def print_status():
-            print(f"🔍 GitHub Actions Status for {args.repo}")
-            print("=" * 60)
+        if args.monitor:
+            monitor.monitor_continuous(args.interval)
+        elif args.dashboard:
+            report = monitor.generate_monitoring_report()
+            monitor.print_monitoring_dashboard(report)
             
-            if args.failing_only:
-                failing = monitor.check_failing_workflows()
-                if failing:
-                    print(f"❌ Found {len(failing)} failing workflows:")
-                    for item in failing:
-                        monitor.print_workflow_status(
-                            item['workflow'], 
-                            [item['run']], 
-                            args.detailed
-                        )
-                else:
-                    print("✅ No failing workflows found!")
-            else:
-                workflows = monitor.get_workflows()
-                for workflow in workflows:
-                    runs = monitor.get_workflow_runs(
-                        workflow['id'], 
-                        args.branch, 
-                        10 if args.detailed else 1
-                    )
-                    monitor.print_workflow_status(workflow, runs, args.detailed)
-        
-        if args.watch:
-            while True:
-                os.system('clear' if os.name == 'posix' else 'cls')
-                print_status()
-                print(f"\n🔄 Refreshing every {args.watch} seconds... (Ctrl+C to exit)")
-                time.sleep(args.watch)
+            if args.output:
+                with open(args.output, 'w') as f:
+                    json.dump(report, f, indent=2)
+                print(f"\n📁 Report saved to: {args.output}")
         else:
-            print_status()
-    
-    except KeyboardInterrupt:
-        print("\n👋 Monitoring stopped")
+            # Single run mode
+            report = monitor.generate_monitoring_report()
+            monitor.print_monitoring_dashboard(report)
+            
+            if args.output:
+                with open(args.output, 'w') as f:
+                    json.dump(report, f, indent=2)
+                print(f"\n📁 Report saved to: {args.output}")
+            
     except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+        print(f"❌ Error: {e}")
+        return 1
+    
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    exit(main())

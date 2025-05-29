@@ -64,3 +64,39 @@
 2025-05-28 03:22:38,998 - INFO - ai_service - Successfully got response from gpt-4o-mini
 2025-05-28 03:22:38,999 - INFO - logging_service - Chat interaction logged for session ec73e1e4-762b-4e4a-b721-dbe49fdb5857
 2025-05-28 03:22:39,000 - INFO - _internal - 127.0.0.1 - - [28/May/2025 03:22:39] "POST /chat HTTP/1.1" 200 -
+2025-05-28 20:12:11,509 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:8000
+2025-05-28 20:12:11,510 - INFO - _internal - [33mPress CTRL+C to quit[0m
+2025-05-28 20:12:11,511 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:12:12,799 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:12:12,812 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:12:19,287 - INFO - web - Index page loaded for session fcfe9cce-f702-41a6-abd6-c50cb8ce2f2e
+2025-05-28 20:12:19,310 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:12:19] "GET / HTTP/1.1" 200 -
+2025-05-28 20:12:27,564 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:12:27] "GET /github-actions HTTP/1.1" 200 -
+2025-05-28 20:12:37,699 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:12:37] "GET /github-actions HTTP/1.1" 200 -
+2025-05-28 20:12:49,740 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:12:49] "GET /github-actions?id=cb104b78-4bbc-4fa0-b568-f9f5b54cdcb9&vscodeBrowserReqId=1748477569471 HTTP/1.1" 200 -
+2025-05-28 20:14:05,363 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:14:05] "GET /github-actions HTTP/1.1" 200 -
+2025-05-28 20:15:44,160 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:15:44,369 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:15:45,935 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:15:45,946 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:16:03,334 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:16:03,537 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:16:04,994 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:16:05,005 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:16:36,697 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:16:36,911 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:16:38,517 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:16:38,528 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:16:53,885 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:16:54,118 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:16:55,406 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:16:55,418 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:17:02,598 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:17:02,826 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:17:04,123 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:17:04,135 - INFO - _internal -  * Debugger PIN: 119-443-285
+2025-05-28 20:17:10,297 - INFO - _internal -  * Detected change in '/Users/sanjeevadodlapati/Downloads/Repos/MetaFunction/scripts/github-actions-monitor.py', reloading
+2025-05-28 20:17:10,532 - INFO - _internal -  * Restarting with stat
+2025-05-28 20:17:11,924 - WARNING - _internal -  * Debugger is active!
+2025-05-28 20:17:11,937 - INFO - _internal -  * Debugger PIN: 119-443-285

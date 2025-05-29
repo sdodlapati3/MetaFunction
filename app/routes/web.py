@@ -7,7 +7,11 @@ the main chat interface and utility endpoints.
 
 import uuid
 import logging
-from flask import Blueprint, render_template, request, session, send_file, jsonify
+import subprocess
+import json
+import os
+from pathlib import Path
+from flask import Blueprint, render_template, request, session, send_file
 from werkzeug.exceptions import BadRequest
 
 from app.services.ai_service import AIService
@@ -232,3 +236,87 @@ def health_check():
 def favicon():
     """Serve favicon to prevent 404 errors."""
     return '', 204  # No content
+
+@web_bp.route('/github-actions')
+def github_actions_dashboard():
+    """GitHub Actions status dashboard."""
+    try:
+        # Run the validation script to get current status
+        script_path = Path(__file__).parent.parent.parent / 'scripts' / 'validate-github-actions.py'
+        repo_path = Path(__file__).parent.parent.parent
+        
+        # Get GitHub token from environment
+        github_token = os.environ.get('GITHUB_TOKEN')
+        
+        if script_path.exists():
+            cmd = [
+                'python3', str(script_path),
+                '--repo-path', str(repo_path),
+                '--output', '/tmp/github_actions_report.json'
+            ]
+            
+            if github_token:
+                cmd.extend(['--token', github_token])
+            
+            # Run the validation script
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            # Try to load the JSON report
+            report_data = None
+            if os.path.exists('/tmp/github_actions_report.json'):
+                try:
+                    with open('/tmp/github_actions_report.json', 'r') as f:
+                        report_data = json.load(f)
+                except json.JSONDecodeError:
+                    pass
+            
+            # If no JSON report, parse stdout
+            if not report_data:
+                report_data = {
+                    'repository': 'MetaFunction',
+                    'timestamp': logging_service.get_current_timestamp(),
+                    'validation_results': {
+                        'syntax': [{'status': 'unknown', 'message': 'Unable to validate'}],
+                        'secrets': [{'status': 'unknown', 'message': 'Token required'}],
+                        'dependencies': [{'status': 'unknown', 'message': 'Unable to check'}],
+                        'test_files': [{'status': 'unknown', 'message': 'Unable to check'}]
+                    },
+                    'recent_runs': [],
+                    'script_output': result.stdout,
+                    'script_error': result.stderr
+                }
+        else:
+            report_data = {
+                'repository': 'MetaFunction',
+                'timestamp': logging_service.get_current_timestamp(),
+                'validation_results': {
+                    'syntax': [{'status': 'error', 'message': 'Validation script not found'}],
+                    'secrets': [{'status': 'error', 'message': 'Validation script not found'}],
+                    'dependencies': [{'status': 'error', 'message': 'Validation script not found'}],
+                    'test_files': [{'status': 'error', 'message': 'Validation script not found'}]
+                },
+                'recent_runs': []
+            }
+        
+        return render_template('github_actions_dashboard.html', report=report_data)
+        
+    except Exception as e:
+        logger.error(f"GitHub Actions dashboard error: {e}")
+        error_report = {
+            'repository': 'MetaFunction',
+            'timestamp': logging_service.get_current_timestamp(),
+            'error': str(e),
+            'validation_results': {
+                'syntax': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}],
+                'secrets': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}],
+                'dependencies': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}],
+                'test_files': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}]
+            },
+            'recent_runs': []
+        }
+        return render_template('github_actions_dashboard.html', report=error_report)
