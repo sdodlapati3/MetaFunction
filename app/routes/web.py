@@ -239,71 +239,100 @@ def favicon():
 
 @web_bp.route('/github-actions')
 def github_actions_dashboard():
-    """GitHub Actions status dashboard."""
+    """Enhanced GitHub Actions status dashboard with monitoring."""
     try:
-        # Run the validation script to get current status
-        script_path = Path(__file__).parent.parent.parent / 'scripts' / 'validate-github-actions.py'
+        # Get paths for scripts
+        validation_script = Path(__file__).parent.parent.parent / 'scripts' / 'validate-github-actions.py'
+        monitoring_script = Path(__file__).parent.parent.parent / 'scripts' / 'github-actions-monitor.py'
         repo_path = Path(__file__).parent.parent.parent
         
         # Get GitHub token from environment
         github_token = os.environ.get('GITHUB_TOKEN')
         
-        if script_path.exists():
-            cmd = [
-                'python3', str(script_path),
-                '--repo-path', str(repo_path),
-                '--output', '/tmp/github_actions_report.json'
-            ]
-            
-            if github_token:
-                cmd.extend(['--token', github_token])
-            
-            # Run the validation script
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            # Try to load the JSON report
-            report_data = None
-            if os.path.exists('/tmp/github_actions_report.json'):
-                try:
-                    with open('/tmp/github_actions_report.json', 'r') as f:
-                        report_data = json.load(f)
-                except json.JSONDecodeError:
-                    pass
-            
-            # If no JSON report, parse stdout
-            if not report_data:
-                report_data = {
-                    'repository': 'MetaFunction',
-                    'timestamp': logging_service.get_current_timestamp(),
-                    'validation_results': {
-                        'syntax': [{'status': 'unknown', 'message': 'Unable to validate'}],
-                        'secrets': [{'status': 'unknown', 'message': 'Token required'}],
-                        'dependencies': [{'status': 'unknown', 'message': 'Unable to check'}],
-                        'test_files': [{'status': 'unknown', 'message': 'Unable to check'}]
-                    },
-                    'recent_runs': [],
-                    'script_output': result.stdout,
-                    'script_error': result.stderr
-                }
-        else:
-            report_data = {
-                'repository': 'MetaFunction',
-                'timestamp': logging_service.get_current_timestamp(),
-                'validation_results': {
-                    'syntax': [{'status': 'error', 'message': 'Validation script not found'}],
-                    'secrets': [{'status': 'error', 'message': 'Validation script not found'}],
-                    'dependencies': [{'status': 'error', 'message': 'Validation script not found'}],
-                    'test_files': [{'status': 'error', 'message': 'Validation script not found'}]
-                },
-                'recent_runs': []
-            }
+        # Initialize combined report
+        combined_report = {
+            'repository': 'MetaFunction',
+            'timestamp': logging_service.get_current_timestamp(),
+            'validation_results': {
+                'syntax': [{'status': 'unknown', 'message': 'Unable to validate'}],
+                'secrets': [{'status': 'unknown', 'message': 'Token required'}],
+                'dependencies': [{'status': 'unknown', 'message': 'Unable to check'}],
+                'test_files': [{'status': 'unknown', 'message': 'Unable to check'}]
+            },
+            'monitoring_data': {
+                'health': {'level': 'unknown', 'score': 0, 'recommendations': []},
+                'summary': {'total_runs': 0, 'success_rate': 0, 'failure_rate': 0},
+                'recent_runs': [],
+                'alerts': []
+            },
+            'script_outputs': {}
+        }
         
-        return render_template('github_actions_dashboard.html', report=report_data)
+        # Run validation script
+        if validation_script.exists():
+            try:
+                cmd = [
+                    'python3', str(validation_script),
+                    '--repo-path', str(repo_path),
+                    '--output', '/tmp/github_validation_report.json'
+                ]
+                
+                if github_token:
+                    cmd.extend(['--token', github_token])
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                combined_report['script_outputs']['validation'] = {
+                    'stdout': result.stdout,
+                    'stderr': result.stderr,
+                    'return_code': result.returncode
+                }
+                
+                # Load validation results
+                if os.path.exists('/tmp/github_validation_report.json'):
+                    with open('/tmp/github_validation_report.json', 'r') as f:
+                        validation_data = json.load(f)
+                        combined_report['validation_results'] = validation_data.get('validation_results', combined_report['validation_results'])
+                        
+            except Exception as e:
+                logger.error(f"Validation script error: {e}")
+                combined_report['script_outputs']['validation'] = {'error': str(e)}
+        
+        # Run monitoring script  
+        if monitoring_script.exists():
+            try:
+                cmd = [
+                    'python3', str(monitoring_script),
+                    '--repo-path', str(repo_path),
+                    '--dashboard',
+                    '--output', '/tmp/github_monitoring_report.json'
+                ]
+                
+                if github_token:
+                    cmd.extend(['--token', github_token])
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                combined_report['script_outputs']['monitoring'] = {
+                    'stdout': result.stdout,
+                    'stderr': result.stderr,
+                    'return_code': result.returncode
+                }
+                
+                # Load monitoring results
+                if os.path.exists('/tmp/github_monitoring_report.json'):
+                    with open('/tmp/github_monitoring_report.json', 'r') as f:
+                        monitoring_data = json.load(f)
+                        combined_report['monitoring_data'] = {
+                            'health': monitoring_data.get('health', combined_report['monitoring_data']['health']),
+                            'summary': monitoring_data.get('summary', combined_report['monitoring_data']['summary']),
+                            'recent_runs': monitoring_data.get('recent_runs', [])[:10],
+                            'alerts': monitoring_data.get('alerts', [])[:5]
+                        }
+                        
+            except Exception as e:
+                logger.error(f"Monitoring script error: {e}")
+                combined_report['script_outputs']['monitoring'] = {'error': str(e)}
+        
+        return render_template('github_actions_enhanced_dashboard.html', report=combined_report)
         
     except Exception as e:
         logger.error(f"GitHub Actions dashboard error: {e}")
@@ -317,6 +346,11 @@ def github_actions_dashboard():
                 'dependencies': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}],
                 'test_files': [{'status': 'error', 'message': f'Dashboard error: {str(e)}'}]
             },
-            'recent_runs': []
+            'monitoring_data': {
+                'health': {'level': 'error', 'score': 0, 'recommendations': []},
+                'summary': {'total_runs': 0, 'success_rate': 0, 'failure_rate': 0},
+                'recent_runs': [],
+                'alerts': []
+            }
         }
-        return render_template('github_actions_dashboard.html', report=error_report)
+        return render_template('github_actions_enhanced_dashboard.html', report=error_report)

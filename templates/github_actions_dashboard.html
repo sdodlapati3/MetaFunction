@@ -49,6 +49,69 @@
     .header h1 {
       font-size: 2.5rem;
       font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .header .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+    }
+    
+    .health-score {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .health-score-circle {
+      display: inline-block;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      position: relative;
+      margin-bottom: 1rem;
+    }
+    
+    .health-excellent { background: conic-gradient(var(--success-color) 0deg 360deg, #e5e7eb 360deg); }
+    .health-good { background: conic-gradient(#10b981 0deg 270deg, #e5e7eb 270deg); }
+    .health-fair { background: conic-gradient(var(--warning-color) 0deg 180deg, #e5e7eb 180deg); }
+    .health-poor { background: conic-gradient(var(--error-color) 0deg 90deg, #e5e7eb 90deg); }
+    .health-unknown { background: #e5e7eb; }
+    
+    .health-score-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+    
+    .health-level {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .alerts-section {
+      margin-bottom: 2rem;
+    }
+    
+    .alert-item {
+      display: flex;
+      align-items: center;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 0.75rem;
+      border-left: 4px solid;
+    }
+    
+    .alert-info { background: #eff6ff; border-color: var(--primary-color); }
+    .alert-warning { background: #fffbeb; border-color: var(--warning-color); }
+    .alert-error { background: #fef2f2; border-color: var(--error-color); }
+    .alert-critical { background: #7f1d1d; color: white; border-color: #dc2626; }
       color: var(--primary-color);
       margin-bottom: 0.5rem;
     }

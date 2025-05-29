@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced GitHub Actions Dashboard - MetaFunction</title>
+  
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-dark: #1d4ed8;
+      --secondary-color: #64748b;
+      --success-color: #059669;
+      --warning-color: #d97706;
+      --error-color: #dc2626;
+      --background-color: #f8fafc;
+      --surface-color: #ffffff;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--background-color);
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    
+    .header .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+    }
+    
+    .health-overview {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+    
+    .health-score {
+      background: var(--surface-color);
+      border-radius: 1rem;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    
+    .health-circle {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      margin: 0 auto 1rem;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .health-excellent { background: linear-gradient(135deg, #10b981, #059669); }
+    .health-good { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+    .health-fair { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .health-poor { background: linear-gradient(135deg, #ef4444, #dc2626); }
+    .health-unknown { background: #9ca3af; }
+    
+    .health-score-text {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: white;
+    }
+    
+    .health-level {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    
+    .stat-card {
+      background: var(--surface-color);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    
+    .stat-label {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+    
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--surface-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-success {
+      background: #d1fae5;
+      color: var(--success-color);
+    }
+
+    .status-warning {
+      background: #fef3c7;
+      color: var(--warning-color);
+    }
+
+    .status-error {
+      background: #fee2e2;
+      color: var(--error-color);
+    }
+
+    .status-unknown {
+      background: #f3f4f6;
+      color: var(--text-secondary);
+    }
+
+    .validation-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .validation-item:last-child {
+      border-bottom: none;
+    }
+
+    .validation-name {
+      font-weight: 500;
+    }
+
+    .recent-runs {
+      margin-bottom: 2rem;
+    }
+    
+    .run-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      background: var(--surface-color);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow);
+    }
+    
+    .run-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    
+    .run-status {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    
+    .run-meta {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    
+    .alerts-section {
+      margin-bottom: 2rem;
+    }
+    
+    .alert-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 0.75rem;
+      border-left: 4px solid;
+    }
+    
+    .alert-info { 
+      background: #eff6ff; 
+      border-color: var(--primary-color); 
+    }
+    
+    .alert-warning { 
+      background: #fffbeb; 
+      border-color: var(--warning-color); 
+    }
+    
+    .alert-error { 
+      background: #fef2f2; 
+      border-color: var(--error-color); 
+    }
+    
+    .alert-critical { 
+      background: #7f1d1d; 
+      color: white; 
+      border-color: #dc2626; 
+    }
+    
+    .alert-icon {
+      margin-top: 0.125rem;
+    }
+    
+    .recommendations {
+      background: var(--surface-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+    
+    .recommendations ul {
+      list-style: none;
+      padding: 0;
+    }
+    
+    .recommendations li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .recommendations li:last-child {
+      border-bottom: none;
+    }
+
+    .refresh-info {
+      text-align: center;
+      margin-top: 2rem;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    .actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      margin-top: 2rem;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-secondary {
+      background: var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 1rem;
+      }
+      
+      .health-overview {
+        grid-template-columns: 1fr;
+      }
+      
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚀 GitHub Actions Dashboard</h1>
+      <p class="subtitle">Repository: {{ report.repository }} • Updated: {{ report.timestamp }}</p>
+    </div>
+
+    <!-- Health Overview -->
+    <div class="health-overview">
+      <div class="health-score">
+        <div class="health-circle health-{{ report.monitoring_data.health.level or 'unknown' }}">
+          <span class="health-score-text">{{ report.monitoring_data.health.score or 0 }}/100</span>
+        </div>
+        <div class="health-level">{{ (report.monitoring_data.health.level or 'unknown').title() }}</div>
+        <p>Repository Health Score</p>
+      </div>
+      
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">{{ report.monitoring_data.summary.success_rate or 0 }}%</div>
+          <div class="stat-label">Success Rate</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ report.monitoring_data.summary.total_runs or 0 }}</div>
+          <div class="stat-label">Total Runs</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ report.monitoring_data.summary.avg_duration or 0 }}m</div>
+          <div class="stat-label">Avg Duration</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts Section -->
+    {% if report.monitoring_data.alerts %}
+    <div class="alerts-section">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🚨 Recent Alerts</h2>
+        </div>
+        {% for alert in report.monitoring_data.alerts %}
+        <div class="alert-item alert-{{ alert.level or 'info' }}">
+          <div class="alert-icon">
+            {% if alert.level == 'critical' %}🚨
+            {% elif alert.level == 'error' %}❌
+            {% elif alert.level == 'warning' %}⚠️
+            {% else %}ℹ️{% endif %}
+          </div>
+          <div>
+            <strong>{{ alert.title or 'Alert' }}</strong>
+            <p>{{ alert.message or 'No message' }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Dashboard Grid -->
+    <div class="dashboard-grid">
+      <!-- Workflow Syntax Validation -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📝 Workflow Syntax</h2>
+          {% set syntax_valid = report.validation_results.syntax|selectattr('status', 'equalto', 'valid')|list|length %}
+          {% set syntax_total = report.validation_results.syntax|length %}
+          {% if syntax_valid == syntax_total and syntax_total > 0 %}
+            <span class="status-badge status-success">Valid</span>
+          {% elif syntax_valid > 0 %}
+            <span class="status-badge status-warning">Partial</span>
+          {% else %}
+            <span class="status-badge status-error">Issues</span>
+          {% endif %}
+        </div>
+        
+        {% for result in report.validation_results.syntax %}
+        <div class="validation-item">
+          <span class="validation-name">{{ result.file or 'Unknown File' }}</span>
+          {% if result.status == 'valid' %}
+            <span class="status-badge status-success">✅ Valid</span>
+          {% elif result.status == 'invalid' %}
+            <span class="status-badge status-error">❌ Invalid</span>
+          {% else %}
+            <span class="status-badge status-unknown">⚪ {{ result.status or 'Unknown' }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Secrets Configuration -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🔐 Secrets</h2>
+          {% set secrets_configured = report.validation_results.secrets|selectattr('status', 'equalto', 'configured')|list|length %}
+          {% set secrets_total = report.validation_results.secrets|length %}
+          {% if secrets_configured == secrets_total and secrets_total > 0 %}
+            <span class="status-badge status-success">Configured</span>
+          {% elif secrets_configured > 0 %}
+            <span class="status-badge status-warning">Partial</span>
+          {% else %}
+            <span class="status-badge status-warning">Limited</span>
+          {% endif %}
+        </div>
+        
+        {% for result in report.validation_results.secrets %}
+        <div class="validation-item">
+          <span class="validation-name">{{ result.secret or result.message or 'Check' }}</span>
+          {% if result.status == 'configured' %}
+            <span class="status-badge status-success">✅ OK</span>
+          {% elif result.status == 'missing' %}
+            <span class="status-badge status-error">❌ Missing</span>
+          {% elif result.status == 'warning' %}
+            <span class="status-badge status-warning">⚠️ Warning</span>
+          {% else %}
+            <span class="status-badge status-unknown">⚪ {{ result.status or 'Unknown' }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Dependencies -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📦 Dependencies</h2>
+          {% set deps_complete = report.validation_results.dependencies|selectattr('status', 'equalto', 'complete')|list|length %}
+          {% set deps_total = report.validation_results.dependencies|length %}
+          {% if deps_complete == deps_total and deps_total > 0 %}
+            <span class="status-badge status-success">Complete</span>
+          {% elif deps_complete > 0 %}
+            <span class="status-badge status-warning">Partial</span>
+          {% else %}
+            <span class="status-badge status-warning">Issues</span>
+          {% endif %}
+        </div>
+        
+        {% for result in report.validation_results.dependencies %}
+        <div class="validation-item">
+          <span class="validation-name">{{ result.file or 'Dependencies' }}</span>
+          {% if result.status == 'complete' %}
+            <span class="status-badge status-success">✅ Complete</span>
+          {% elif result.status == 'incomplete' %}
+            <span class="status-badge status-warning">⚠️ Incomplete</span>
+          {% else %}
+            <span class="status-badge status-unknown">⚪ {{ result.status or 'Unknown' }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Test Files -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🧪 Test Files</h2>
+          {% set tests_exist = report.validation_results.test_files|selectattr('status', 'equalto', 'exists')|list|length %}
+          {% set tests_total = report.validation_results.test_files|length %}
+          {% if tests_exist == tests_total and tests_total > 0 %}
+            <span class="status-badge status-success">Found</span>
+          {% elif tests_exist > 0 %}
+            <span class="status-badge status-warning">Partial</span>
+          {% else %}
+            <span class="status-badge status-error">Missing</span>
+          {% endif %}
+        </div>
+        
+        {% for result in report.validation_results.test_files %}
+        <div class="validation-item">
+          <span class="validation-name">{{ result.file or 'Test File' }}</span>
+          {% if result.status == 'exists' %}
+            <span class="status-badge status-success">✅ Found</span>
+          {% elif result.status == 'missing' %}
+            <span class="status-badge status-error">❌ Missing</span>
+          {% else %}
+            <span class="status-badge status-unknown">⚪ {{ result.status or 'Unknown' }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Recent Workflow Runs -->
+    {% if report.monitoring_data.recent_runs %}
+    <div class="recent-runs">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🔄 Recent Workflow Runs</h2>
+        </div>
+        
+        {% for run in report.monitoring_data.recent_runs[:10] %}
+        <div class="run-item">
+          <div class="run-info">
+            <div class="run-status 
+              {% if run.conclusion == 'success' %}status-success
+              {% elif run.conclusion == 'failure' %}status-error
+              {% elif run.status == 'in_progress' %}status-warning
+              {% else %}status-unknown{% endif %}"></div>
+            <div>
+              <strong>{{ run.name or 'Unknown Workflow' }}</strong>
+              <div class="run-meta">
+                {{ run.commit_sha or 'unknown' }} by {{ run.actor or 'unknown' }}
+                {% if run.duration_minutes %} • {{ "%.1f"|format(run.duration_minutes) }}m{% endif %}
+              </div>
+            </div>
+          </div>
+          <div>
+            {% if run.conclusion == 'success' %}✅
+            {% elif run.conclusion == 'failure' %}❌
+            {% elif run.status == 'in_progress' %}🔄
+            {% elif run.status == 'queued' %}⏳
+            {% else %}⚪{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Recommendations -->
+    {% if report.monitoring_data.health.recommendations %}
+    <div class="recommendations">
+      <h2 class="card-title">💡 Recommendations</h2>
+      <ul>
+        {% for rec in report.monitoring_data.health.recommendations %}
+        <li>
+          <span>•</span>
+          <span>{{ rec }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn btn-primary" onclick="location.reload()">
+        🔄 Refresh Dashboard
+      </button>
+      <a href="/" class="btn btn-secondary">
+        🏠 Back to Home
+      </a>
+      <a href="https://github.com/{{ report.repository.split('/')[0] }}/{{ report.repository.split('/')[1] }}/actions" 
+         target="_blank" class="btn btn-secondary">
+        🔗 View on GitHub
+      </a>
+    </div>
+
+    <div class="refresh-info">
+      <p>Dashboard auto-refreshes every 5 minutes</p>
+      <p>Last updated: {{ report.timestamp }}</p>
+    </div>
+  </div>
+
+  <script>
+    // Auto-refresh every 5 minutes
+    setTimeout(() => {
+      location.reload();
+    }, 300000);
+
+    // Add loading states for better UX
+    document.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        if (this.textContent.includes('Refresh')) {
+          this.innerHTML = '⏳ Refreshing...';
+          this.disabled = true;
+        }
+      });
+    });
+
+    // Add smooth scrolling for better navigation
+    document.documentElement.style.scrollBehavior = 'smooth';
+  </script>
+</body>
+</html>

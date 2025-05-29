@@ -11,7 +11,7 @@ import logging
 import argparse
 import requests
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -40,6 +40,18 @@ class MonitorAlert:
     message: str
     timestamp: str
     workflow_run: Optional[WorkflowRun] = None
+
+
+def safe_parse_datetime(date_string: str) -> datetime:
+    """Safely parse GitHub API datetime strings to timezone-aware datetime objects."""
+    if date_string.endswith('Z'):
+        date_string = date_string.replace('Z', '+00:00')
+    return datetime.fromisoformat(date_string)
+
+
+def now_utc() -> datetime:
+    """Get current UTC datetime with timezone info."""
+    return datetime.now(timezone.utc)
 
 
 class GitHubActionsMonitor:
@@ -168,8 +180,8 @@ class GitHubActionsMonitor:
                 duration = None
                 if run.get('conclusion') and run.get('created_at') and run.get('updated_at'):
                     try:
-                        created = datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
-                        updated = datetime.fromisoformat(run['updated_at'].replace('Z', '+00:00'))
+                        created = safe_parse_datetime(run['created_at'])
+                        updated = safe_parse_datetime(run['updated_at'])
                         duration = (updated - created).total_seconds() / 60
                     except:
                         pass
@@ -232,7 +244,7 @@ class GitHubActionsMonitor:
             'success_rate': round(success_rate, 1),
             'failure_rate': round(failure_rate, 1),
             'avg_duration': round(avg_duration, 1),
-            'last_run': runs[0] if runs else None
+            'last_run': asdict(runs[0]) if runs else None
         }
     
     def check_for_new_failures(self, current_runs: List[WorkflowRun]) -> List[MonitorAlert]:
@@ -252,7 +264,7 @@ class GitHubActionsMonitor:
                         level='error',
                         title='Workflow Failed',
                         message=f"Workflow '{run.name}' failed on commit {run.commit_sha}",
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=now_utc().isoformat(),
                         workflow_run=run
                     )
                     alerts.append(alert)
@@ -265,7 +277,7 @@ class GitHubActionsMonitor:
                         level='warning',
                         title='Long Running Workflow',
                         message=f"Workflow '{run.name}' has been running for {run.duration_minutes:.1f} minutes",
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=now_utc().isoformat(),
                         workflow_run=run
                     )
                     alerts.append(alert)
@@ -290,10 +302,10 @@ class GitHubActionsMonitor:
         
         # Deployment frequency factor (0-25 points)
         if runs:
+            cutoff_time = now_utc() - timedelta(days=7)
             recent_runs = [
                 run for run in runs 
-                if datetime.fromisoformat(run.created_at.replace('Z', '+00:00')) > 
-                   datetime.now().replace(tzinfo=None) - timedelta(days=7)
+                if safe_parse_datetime(run.created_at) > cutoff_time
             ]
             frequency_score = min(25, len(recent_runs) * 5)
             factors['frequency'] = frequency_score
@@ -360,6 +372,23 @@ class GitHubActionsMonitor:
             
         return recommendations
     
+    def _serialize_alert(self, alert: MonitorAlert) -> Dict:
+        """Serialize a MonitorAlert to a JSON-compatible dictionary."""
+        alert_dict = {
+            'level': alert.level,
+            'title': alert.title,
+            'message': alert.message,
+            'timestamp': alert.timestamp
+        }
+        
+        # Handle the optional workflow_run field
+        if alert.workflow_run:
+            alert_dict['workflow_run'] = asdict(alert.workflow_run)
+        else:
+            alert_dict['workflow_run'] = None
+            
+        return alert_dict
+    
     def generate_monitoring_report(self) -> Dict:
         """Generate comprehensive monitoring report."""
         runs = self.get_workflow_runs(20)
@@ -371,19 +400,19 @@ class GitHubActionsMonitor:
         self.alerts.extend(new_alerts)
         
         # Keep only recent alerts (last 24 hours)
-        cutoff_time = datetime.now() - timedelta(hours=24)
+        cutoff_time = now_utc() - timedelta(hours=24)
         self.alerts = [
             alert for alert in self.alerts
-            if datetime.fromisoformat(alert.timestamp) > cutoff_time
+            if safe_parse_datetime(alert.timestamp) > cutoff_time
         ]
         
         report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': now_utc().isoformat(),
             'repository': f"{self.owner}/{self.repo}",
             'summary': summary,
             'health': health,
             'recent_runs': [asdict(run) for run in runs[:10]],
-            'alerts': [asdict(alert) for alert in self.alerts[-10:]],  # Last 10 alerts
+            'alerts': [self._serialize_alert(alert) for alert in self.alerts[-10:]],  # Last 10 alerts
             'monitoring_status': 'active' if self.github_token else 'limited'
         }
         
