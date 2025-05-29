@@ -17,7 +17,7 @@ pdf2image==1.16.0
 
 # Browser automation (highly recommended)
 selenium==4.1.0
-webdriver-manager==3.5.2
+webdriver-manager==4.0.2
 
 # Additional utilities
 certifi==2021.10.8
