@@ -13,7 +13,7 @@ pdfminer.six>=20231228
 
 # For OCR capabilities (optional)
 pytesseract==0.3.8
-pdf2image==1.16.0
+pdf2image==1.17.0
 
 # Browser automation - Updated versions
 selenium>=4.15.0
