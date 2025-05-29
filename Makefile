@@ -17,7 +17,9 @@ test: ## Run tests
 	pytest tests/ -v
 
 test-cov: ## Run tests with coverage
-	pytest tests/ -v --cov=app --cov=resolvers --cov-report=html
+	pytest tests/ -v --cov=app --cov=resolvers --cov-report=html --cov-report=term-missing
+	@echo "📊 Coverage report generated in docs/coverage/"
+	@if [ -d "htmlcov" ]; then mv htmlcov/* docs/coverage/ && rmdir htmlcov; fi
 
 lint: ## Run linting
 	flake8 app/ resolvers/ tests/
@@ -29,7 +31,7 @@ format: ## Format code
 clean: ## Clean up temporary files
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -delete
-	rm -rf .coverage htmlcov/ .pytest_cache/
+	rm -rf .coverage docs/coverage/ htmlcov/ .pytest_cache/
 
 run: ## Run the application in development mode
 	FLASK_ENV=development flask run --host=0.0.0.0 --port=8000 --debug
