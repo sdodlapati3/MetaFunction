@@ -21,7 +21,7 @@ webdriver-manager==3.5.2
 
 # Additional utilities
 certifi==2021.10.8
-urllib3==1.26.7
+urllib3==2.4.0
 
 # Testing and development tools (required for CI/CD)
 pytest>=7.0.0
