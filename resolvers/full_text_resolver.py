@@ -3,6 +3,7 @@ import os
 import re
 import logging
 import requests
+from requests.exceptions import RequestException, ConnectionError
 from Bio import Entrez
 from bs4 import BeautifulSoup
 from functools import lru_cache
@@ -15,6 +16,9 @@ import time
 import logging
 import requests
 import xml.etree.ElementTree as ET  # Add this import at the top of your file with other imports
+
+# Import PDF extraction functions
+from resolvers.pdf_extractor import extract_text_from_pdf_bytes
 
 # ... rest of your imports ...
 
@@ -477,37 +481,8 @@ def fetch_by_pmcid(pmcid):
 # --- Caching ---
 @lru_cache(maxsize=100)
 def cached_resolve_full_text(pmid=None, doi=None):
-
-    # Try pdfplumber first
-    if "pdfplumber" in globals():
-        extraction_methods.append(extract_with_pdfplumber)
-
-    # Try PyMuPDF if available
-    if "fitz" in globals():
-        extraction_methods.append(extract_with_pymupdf)
-
-    # Try pdfminer if available
-    if "extract_text_to_fp" in globals():
-        extraction_methods.append(extract_with_pdfminer)
-
-    for method in extraction_methods:
-        try:
-            extracted = method(pdf_bytes)
-            if extracted and len(extracted) > len(text):
-                text = extracted
-                break  # Use first successful extraction
-        except Exception as e:
-            logging.error(f"PDF extraction method failed: {e}")
-            continue
-
-    # Clean up common PDF extraction issues
-    if text:
-        # Fix hyphenated words across lines
-        text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
-
-    return text
+    """Cached version of the full text resolver."""
+    return resolve_full_text(pmid=pmid, doi=doi)
 
 
 def extract_with_pdfplumber(pdf_bytes):

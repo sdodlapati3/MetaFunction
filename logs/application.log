@@ -151,3 +151,10 @@
 2025-05-28 20:25:00,706 - INFO - web - Index page loaded for session b2005f8e-b93f-420f-b77b-7c0e7e8feb5f
 2025-05-28 20:25:00,712 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:25:00] "GET / HTTP/1.1" 200 -
 2025-05-28 20:25:01,212 - INFO - _internal - 127.0.0.1 - - [28/May/2025 20:25:01] "GET /github-actions HTTP/1.1" 200 -
+2025-05-28 20:48:48,481 - INFO - main - Starting MetaFunction on port 8000
+2025-05-28 20:48:48,482 - INFO - main - Debug mode: False
+2025-05-28 20:48:48,498 - INFO - _internal - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.12.184:8000
+2025-05-28 20:48:48,498 - INFO - _internal - [33mPress CTRL+C to quit[0m
