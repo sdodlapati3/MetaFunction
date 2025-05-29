@@ -82,7 +82,7 @@ The repository has been systematically organized for maximum clarity and maintai
 
 **📁 Essential Files (Root Directory)**
 - `app.py` - Main application entry point
-- `requirements*.txt` - Dependency management (bulletproof, stable, lock, dev)
+- `requirements/` - Organized dependency management (bulletproof, stable, lock, dev)
 - `README.md` - Primary documentation
 - `PERFECT_SUCCESS_FINAL.md` - CI/CD achievement documentation
 - `.github/workflows/` - Ultra-bulletproof CI/CD pipelines
@@ -193,8 +193,12 @@ MetaFunction/
 │
 └── 📋 Configuration
     ├── pyproject.toml               # Modern Python packaging
-    ├── requirements.txt             # Production dependencies
-    ├── requirements-dev.txt         # Development dependencies
+    ├── requirements/                # Organized dependency management
+    │   ├── requirements.txt         # Production dependencies
+    │   ├── requirements-dev.txt     # Development dependencies
+    │   ├── requirements-stable.txt  # Stable versions
+    │   ├── requirements-bulletproof.txt # Ultra-safe versions
+    │   └── requirements-lock.txt    # Locked versions
     ├── .env.example                 # Environment template
     └── README.md                    # This file
 ```
@@ -215,7 +219,7 @@ MetaFunction/
 
 3. **Install dependencies**
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements/requirements.txt
    ```
 
 4. **Configure environment variables**
@@ -347,7 +351,7 @@ Response:
 ### Setting up Development Environment
 ```bash
 # Install development dependencies
-pip install -r requirements-dev.txt
+pip install -r requirements/requirements-dev.txt
 
 # Run linting
 flake8 app/ resolvers/
@@ -391,7 +395,7 @@ We welcome contributions! Here's how to get started:
    ```bash
    python -m venv venv
    source venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements/requirements.txt
    ```
 
 4. **Make your changes**

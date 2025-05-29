@@ -73,23 +73,23 @@ jobs:
           echo "📥 Trying installation strategies..."
           
           # Strategy 1: Bulletproof requirements (if exists)
-          if [ -f "requirements-bulletproof.txt" ]; then
+          if [ -f "requirements/requirements-bulletproof.txt" ]; then
             echo "🎯 Strategy 1: Installing bulletproof requirements..."
-            pip install -r requirements-bulletproof.txt 2>/dev/null && echo "✅ Bulletproof requirements installed" || echo "⚠️ Bulletproof requirements skipped"
+            pip install -r requirements/requirements-bulletproof.txt 2>/dev/null && echo "✅ Bulletproof requirements installed" || echo "⚠️ Bulletproof requirements skipped"
           fi
           
           # Strategy 2: Stable requirements (if exists)
           if ! python -c "import flask, requests, pytest, flake8" 2>/dev/null; then
-            if [ -f "requirements-stable.txt" ]; then
+            if [ -f "requirements/requirements-stable.txt" ]; then
               echo "🎯 Strategy 2: Installing stable requirements..."
-              pip install -r requirements-stable.txt 2>/dev/null && echo "✅ Stable requirements installed" || echo "⚠️ Stable requirements skipped"
+              pip install -r requirements/requirements-stable.txt 2>/dev/null && echo "✅ Stable requirements installed" || echo "⚠️ Stable requirements skipped"
             fi
           fi
           
           # Strategy 2: Regular requirements (fallback)
           if ! python -c "import flask, requests, pytest, flake8" 2>/dev/null; then
             echo "🎯 Strategy 3: Installing regular requirements..."
-            pip install -r requirements.txt 2>/dev/null && echo "✅ Regular requirements installed" || echo "⚠️ Regular requirements skipped"
+            pip install -r requirements/requirements.txt 2>/dev/null && echo "✅ Regular requirements installed" || echo "⚠️ Regular requirements skipped"
           fi
           
           # Strategy 3: Minimal requirements (ultimate fallback)

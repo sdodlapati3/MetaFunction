@@ -264,7 +264,7 @@ class GitHubActionsSystemTest:
         
         try:
             # Check requirements-dev.txt for security tools
-            req_dev_path = self.repo_path / 'requirements-dev.txt'
+            req_dev_path = self.repo_path / 'requirements' / 'requirements-dev.txt'
             has_bandit = False
             has_safety = False
             
@@ -286,7 +286,7 @@ class GitHubActionsSystemTest:
             if success:
                 logger.info("✅ Security dependencies properly configured")
             else:
-                logger.error("❌ Missing security dependencies in requirements-dev.txt")
+                logger.error("❌ Missing security dependencies in requirements/requirements-dev.txt")
                 
         except Exception as e:
             logger.error(f"❌ Dependency validation test failed: {e}")

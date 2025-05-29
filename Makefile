@@ -7,10 +7,10 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install production dependencies
-	pip install -r requirements.txt
+	pip install -r requirements/requirements.txt
 
 install-dev: ## Install development dependencies
-	pip install -r requirements.txt -r requirements-dev.txt
+	pip install -r requirements/requirements.txt -r requirements/requirements-dev.txt
 	pre-commit install
 
 test: ## Run tests

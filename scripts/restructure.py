@@ -89,7 +89,7 @@ class RestructureManager:
         """Create modern configuration files."""
         config_files = {
             'pyproject.toml': self._get_pyproject_toml(),
-            'requirements-dev.txt': self._get_dev_requirements(),
+            'requirements/requirements-dev.txt': self._get_dev_requirements(),
             'Dockerfile': self._get_dockerfile(),
             'docker-compose.yml': self._get_docker_compose(),
             'Makefile': self._get_makefile(),
@@ -225,7 +225,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY requirements/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
@@ -282,10 +282,10 @@ help: ## Show this help message
 \t@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\\033[36m%-20s\\033[0m %s\\n", $$1, $$2}'
 
 install: ## Install production dependencies
-\tpip install -r requirements.txt
+\tpip install -r requirements/requirements.txt
 
 install-dev: ## Install development dependencies
-\tpip install -r requirements.txt -r requirements-dev.txt
+\tpip install -r requirements/requirements.txt -r requirements/requirements-dev.txt
 \tpre-commit install
 
 test: ## Run tests

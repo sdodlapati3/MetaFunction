@@ -240,8 +240,8 @@ class GitHubActionsValidator:
     def check_dependencies(self) -> List[Dict]:
         """Check for missing dependencies referenced in workflows."""
         requirements_files = [
-            self.repo_path / 'requirements.txt',
-            self.repo_path / 'requirements-dev.txt',
+            self.repo_path / 'requirements' / 'requirements.txt',
+            self.repo_path / 'requirements' / 'requirements-dev.txt',
             self.repo_path / 'package.json'
         ]
         
