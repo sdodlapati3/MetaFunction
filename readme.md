@@ -13,7 +13,7 @@
 
 *Transform scientific literature into actionable insights with enterprise-grade AI infrastructure*
 
-[🚀 Quick Start](#-quick-start) • [📖 Documentation](#-documentation) • [🏢 Enterprise](#-enterprise-features) • [🔧 API Reference](#-api-reference) • [🤝 Contributing](#-contributing)
+[🔥 **3-Min Overview**](OVERVIEW.md) • [🚀 Quick Start](#-quick-start) • [🏢 Enterprise Features](#-enterprise-features) • [📚 API Reference](#-api-reference) • [🤝 Contributing](#-contributing)
 
 </div>
 
