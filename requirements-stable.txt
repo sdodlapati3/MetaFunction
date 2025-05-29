@@ -1,0 +1,45 @@
+# Stable Requirements - Exact versions for maximum compatibility (May 2025)
+# Generated on 2025-05-29 for production stability
+
+# Core application dependencies
+flask==3.0.3
+python-dotenv==1.0.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+openai==1.35.7
+
+# PDF processing - Compatible stable versions
+pdfplumber==0.11.2
+PyMuPDF==1.24.5
+pdfminer.six==20231228
+
+# OCR capabilities
+pytesseract==0.3.13
+pdf2image==1.17.0
+
+# Browser automation
+selenium==4.21.0
+webdriver-manager==4.0.1
+
+# Security and utilities - Latest stable
+certifi==2024.6.2
+urllib3==2.2.3
+charset-normalizer==3.4.2
+cryptography==42.0.8
+
+# Development and testing - Compatible stable versions
+pytest==8.3.5
+flake8==7.1.0
+mypy==1.10.1
+bandit==1.7.9
+safety==3.2.3
+coverage==7.6.0
+
+# Production utilities - Compatible versions
+click==8.1.7
+filelock==3.15.4
+psutil==6.0.0
+pydantic==2.7.4
+pydantic-core==2.18.4
+numpy==2.0.1
