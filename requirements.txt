@@ -22,3 +22,10 @@ webdriver-manager==3.5.2
 # Additional utilities
 certifi==2021.10.8
 urllib3==1.26.7
+
+# Testing and development tools (required for CI/CD)
+pytest>=7.0.0
+flake8>=5.0.0
+mypy>=0.950
+bandit>=1.7.0
+safety>=2.0.0

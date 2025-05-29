@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 @dataclass
-class TestResult:
+class AutomationTestResult:
     """Represents the result of a test execution."""
     test_name: str
     status: str  # PASSED, FAILED, ERROR, SKIPPED
@@ -45,7 +45,7 @@ class TestResult:
     details: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
-class TestSuite:
+class AutomationTestSuite:
     """Represents a collection of related tests."""
     name: str
     description: str
@@ -59,8 +59,8 @@ class IntegrationTestFramework:
     
     def __init__(self, config_file: Optional[str] = None):
         self.config = self._load_config(config_file)
-        self.test_results: Dict[str, TestResult] = {}
-        self.test_suites: Dict[str, TestSuite] = {}
+        self.test_results: Dict[str, AutomationTestResult] = {}
+        self.test_suites: Dict[str, AutomationTestSuite] = {}
         self.start_time = datetime.now()
         self.session_id = str(uuid.uuid4())[:8]
         
@@ -113,7 +113,7 @@ class IntegrationTestFramework:
     def _initialize_test_suites(self):
         """Initialize predefined test suites."""
         self.test_suites = {
-            'infrastructure': TestSuite(
+            'infrastructure': AutomationTestSuite(
                 name='Infrastructure Tests',
                 description='Validate infrastructure components and connectivity',
                 tests=[
@@ -125,7 +125,7 @@ class IntegrationTestFramework:
                 timeout=600,
                 parallel=True
             ),
-            'application': TestSuite(
+            'application': AutomationTestSuite(
                 name='Application Tests',
                 description='Validate application deployment and functionality',
                 tests=[
@@ -137,7 +137,7 @@ class IntegrationTestFramework:
                 dependencies=['infrastructure'],
                 timeout=900
             ),
-            'data': TestSuite(
+            'data': AutomationTestSuite(
                 name='Data Layer Tests',
                 description='Validate database and data services',
                 tests=[
@@ -149,7 +149,7 @@ class IntegrationTestFramework:
                 dependencies=['infrastructure'],
                 timeout=1200
             ),
-            'security': TestSuite(
+            'security': AutomationTestSuite(
                 name='Security Tests',
                 description='Validate security controls and compliance',
                 tests=[
@@ -162,7 +162,7 @@ class IntegrationTestFramework:
                 dependencies=['application'],
                 timeout=900
             ),
-            'performance': TestSuite(
+            'performance': AutomationTestSuite(
                 name='Performance Tests',
                 description='Validate performance characteristics',
                 tests=[
@@ -175,7 +175,7 @@ class IntegrationTestFramework:
                 timeout=1800,
                 parallel=True
             ),
-            'integration': TestSuite(
+            'integration': AutomationTestSuite(
                 name='End-to-End Integration Tests',
                 description='Validate complete user workflows',
                 tests=[
@@ -187,7 +187,7 @@ class IntegrationTestFramework:
                 dependencies=['application', 'data', 'security'],
                 timeout=1200
             ),
-            'disaster_recovery': TestSuite(
+            'disaster_recovery': AutomationTestSuite(
                 name='Disaster Recovery Tests',
                 description='Validate backup and recovery procedures',
                 tests=[
@@ -201,7 +201,7 @@ class IntegrationTestFramework:
             )
         }
     
-    async def run_test_suite(self, suite_name: str) -> Dict[str, TestResult]:
+    async def run_test_suite(self, suite_name: str) -> Dict[str, AutomationTestResult]:
         """Run a specific test suite."""
         if suite_name not in self.test_suites:
             raise ValueError(f"Test suite '{suite_name}' not found")
@@ -228,7 +228,7 @@ class IntegrationTestFramework:
         
         return suite_results
     
-    async def run_all_test_suites(self) -> Dict[str, Dict[str, TestResult]]:
+    async def run_all_test_suites(self) -> Dict[str, Dict[str, AutomationTestResult]]:
         """Run all test suites in dependency order."""
         logger.info("Starting comprehensive integration test execution")
         
@@ -253,7 +253,7 @@ class IntegrationTestFramework:
         
         return all_results
     
-    async def _run_tests_parallel(self, test_names: List[str], timeout: int) -> Dict[str, TestResult]:
+    async def _run_tests_parallel(self, test_names: List[str], timeout: int) -> Dict[str, AutomationTestResult]:
         """Run tests in parallel."""
         results = {}
         
@@ -272,7 +272,7 @@ class IntegrationTestFramework:
                     results[test_name] = result
                 except Exception as e:
                     logger.error(f"Test {test_name} failed with exception: {e}")
-                    results[test_name] = TestResult(
+                    results[test_name] = AutomationTestResult(
                         test_name=test_name,
                         status="ERROR",
                         duration=0.0,
@@ -282,7 +282,7 @@ class IntegrationTestFramework:
         
         return results
     
-    async def _run_tests_sequential(self, test_names: List[str], timeout: int) -> Dict[str, TestResult]:
+    async def _run_tests_sequential(self, test_names: List[str], timeout: int) -> Dict[str, AutomationTestResult]:
         """Run tests sequentially."""
         results = {}
         
@@ -298,7 +298,7 @@ class IntegrationTestFramework:
                     
             except Exception as e:
                 logger.error(f"Test {test_name} failed with exception: {e}")
-                results[test_name] = TestResult(
+                results[test_name] = AutomationTestResult(
                     test_name=test_name,
                     status="ERROR",
                     duration=0.0,
@@ -308,11 +308,11 @@ class IntegrationTestFramework:
         
         return results
     
-    def _execute_test_sync(self, test_name: str) -> TestResult:
+    def _execute_test_sync(self, test_name: str) -> AutomationTestResult:
         """Synchronous wrapper for test execution."""
         return asyncio.run(self._execute_test(test_name))
     
-    async def _execute_test(self, test_name: str) -> TestResult:
+    async def _execute_test(self, test_name: str) -> AutomationTestResult:
         """Execute a single test."""
         start_time = time.time()
         
@@ -329,7 +329,7 @@ class IntegrationTestFramework:
             
             duration = time.time() - start_time
             
-            return TestResult(
+            return AutomationTestResult(
                 test_name=test_name,
                 status="PASSED" if result else "FAILED",
                 duration=duration,
@@ -341,7 +341,7 @@ class IntegrationTestFramework:
             duration = time.time() - start_time
             logger.error(f"Test {test_name} failed: {e}")
             
-            return TestResult(
+            return AutomationTestResult(
                 test_name=test_name,
                 status="ERROR",
                 duration=duration,
@@ -862,7 +862,7 @@ print('API functionality test passed')
         
         return True
     
-    def _has_critical_failures(self, results: Dict[str, TestResult]) -> bool:
+    def _has_critical_failures(self, results: Dict[str, AutomationTestResult]) -> bool:
         """Check if there are critical failures that should stop execution."""
         critical_tests = ['test_kubernetes_cluster_health', 'test_application_deployment']
         

@@ -65,7 +65,7 @@ class GitHubActionsMonitor:
             github_token: GitHub personal access token for API access
         """
         self.repo_path = Path(repo_path)
-        self.github_token = github_token or os.environ.get('GITHUB_TOKEN')
+        self.github_token = github_token or os.environ.get('GITHUB_TOKEN') or self._extract_github_token()
         self.api_base = "https://api.github.com"
         
         # Get repository info
@@ -89,6 +89,33 @@ class GitHubActionsMonitor:
         # Store for tracking state changes
         self.last_known_runs = {}
         self.alerts = []
+        
+    def _extract_github_token(self) -> Optional[str]:
+        """Extract GitHub token from git remotes."""
+        try:
+            result = subprocess.run(
+                ['git', 'remote', '-v'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            remotes = result.stdout.strip().split('\n')
+            for remote in remotes:
+                if 'github.com' in remote and 'ghp_' in remote:
+                    # Extract token from URL like: https://ghp_TOKEN@github.com/owner/repo.git
+                    if 'ghp_' in remote:
+                        start = remote.find('ghp_')
+                        end = remote.find('@github.com')
+                        if start != -1 and end != -1:
+                            token = remote[start:end]
+                            return token
+            
+            return None
+            
+        except subprocess.CalledProcessError:
+            return None
         
     def _get_repo_info(self) -> Tuple[str, str]:
         """Extract owner and repo name from git remote."""

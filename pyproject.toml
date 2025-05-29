@@ -69,6 +69,12 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "--cov=app --cov=resolvers --cov-report=html --cov-report=term-missing"
+markers = [
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "performance: marks tests as performance tests",
+    "security: marks tests as security tests"
+]
 
 [tool.mypy]
 python_version = "3.8"

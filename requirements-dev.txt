@@ -10,3 +10,7 @@ safety>=3.5.0  # Dependency vulnerability scanning
 pre-commit>=3.3.0
 httpx>=0.24.0  # For testing async HTTP calls
 factory-boy>=3.3.0  # For creating test fixtures
+locust>=2.17.0  # Performance testing
+semgrep>=1.45.0  # Security scanning
+aiohttp>=3.8.0  # Async HTTP client for advanced integration tests
+prometheus_client>=0.17.0  # Prometheus metrics client for monitoring tests

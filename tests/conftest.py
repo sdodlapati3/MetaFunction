@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from app import create_app
+from app.main import create_app
 from app.config import TestingConfig
 
 @pytest.fixture
