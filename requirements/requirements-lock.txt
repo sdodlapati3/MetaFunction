@@ -12,7 +12,7 @@ beautifulsoup4==4.13.4
 biopython==1.85
 black==25.1.0
 blinker==1.9.0
-bs4==0.0.1
+bs4==0.0.2
 cachetools==5.5.2
 certifi==2025.4.26
 cffi==1.17.1
